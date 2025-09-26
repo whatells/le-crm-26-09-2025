@@ -1,4 +1,13 @@
 /**
+ * Module: CRM_DataService
+ * Rôle: définir la structure des feuilles et fournir les services de données (stock, ventes, achats, analytics, dashboard).
+ * Entrées publiques: createSheetsStructure(), setupSheetFormats(), getDashboardData(), getStockData(), getSalesData(), getPurchasesData(), getAnalyticsData(), getRecentActivity().
+ * Dépendances: SpreadsheetApp (feuilles Stock/Ventes/Achats/Configuration/Dashboard), log_(), calculateDashboardStats(), autres helpers locaux.
+ * Effets de bord: crée/formatte des feuilles, applique validations et formats, lit massivement les données pour calculer des KPI.
+ * Pièges: nombreuses lectures de plage (penser batching), conversions Number sensibles au format européen, attention aux appels répétés (quotas 6 min).
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Service de gestion des données CRM
  * Toutes les opérations CRUD sur les feuilles Google Sheets
  */

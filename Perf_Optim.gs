@@ -1,4 +1,13 @@
 /**
+ * Module: Perf_Optim
+ * Rôle: journalisation centralisée et maintenance (triggers, purge de caches).
+ * Entrées publiques: logE_(), step10InstallHourlyTrigger(), step10RemoveTriggers(), step10ClearCaches().
+ * Dépendances: SpreadsheetApp (Logs), ScriptApp (triggers), CacheService/PropertiesService (PROC_IDS, THREAD_CURSOR).
+ * Effets de bord: écrit dans Logs, crée/supprime des triggers, vide caches et globals.
+ * Pièges: suppression agressive des caches partagés, attention aux triggers multiples si l'ancien n'est pas retiré.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Perf_Optim.gs — Logs, triggers et maintenance
  */
 

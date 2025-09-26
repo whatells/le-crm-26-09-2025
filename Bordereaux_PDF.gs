@@ -1,4 +1,13 @@
 /**
+ * Module: Bordereaux_PDF
+ * Rôle: générer des étiquettes PDF à partir de l'onglet Bordereaux et des métadonnées stock.
+ * Entrées publiques: labelsGenerateCurrent(), labelsGenerateVisible().
+ * Dépendances: SpreadsheetApp (feuilles "Bordereaux" et "Stock"), SlidesApp (création overlay), DriveApp (export PDF).
+ * Effets de bord: met à jour Statut PDF/Lien dans la feuille, crée des fichiers Slides/PDF et les place sur Drive.
+ * Pièges: quotas Slides/Drive, nettoyage manuel des présentations, dépendance à la colonne SKU pour retrouver le titre.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Étape 6 — Bordereaux (v1 overlay via Google Slides -> PDF)
  * - Lit l’onglet Bordereaux (colonnes: Date, SKU, Titre (avec SKU), N° suivi, Transporteur, Statut PDF, Lien PDF, Notes)
  * - Produit un PDF A6 (ou A4) avec overlay: Titre+SKU (+ N° suivi), puis renseigne "Statut PDF" et "Lien PDF"

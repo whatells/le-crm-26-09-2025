@@ -1,3 +1,12 @@
+/**
+ * Module: Ui_Config
+ * Rôle: ouvrir la popup de configuration rapide et exposer les helpers d'upsert des clés.
+ * Entrées publiques: openConfigUI(), getKnownConfig(), saveConfigValues(), include_().
+ * Dépendances: HtmlService (ui_config), SpreadsheetApp (feuille Configuration), Config.gs (getConfig_).
+ * Effets de bord: ouvre un modal Sheets, lit/écrit l'onglet Configuration ligne par ligne.
+ * Pièges: duplications en fin de fichier (fonctions répétées), attention aux locales (trim/uppercase), éviter insertSheet multiple.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 // ==============================
 // FICHIER 2/4 — Ui_Config.gs (Apps Script, serveur)
 // ==============================

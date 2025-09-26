@@ -1,4 +1,13 @@
 /**
+ * Module: Config
+ * Rôle: lecture clé/valeur simple depuis l'onglet Configuration.
+ * Entrées publiques: getConfig_(), cfg_().
+ * Dépendances: SpreadsheetApp (feuille "Configuration").
+ * Effets de bord: aucun (lectures).
+ * Pièges: onglet absent ou vide => renvoie map vide; conversions manuelles nécessaires en aval.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Lecture simple de la table Configuration (clé/valeur)
  * Ex. clés: GMAIL_LABEL_INGEST_STOCK, GMAIL_LABEL_SALES_VINTED, COMMISSION_VINTED, APPLY_URSSAF...
  */

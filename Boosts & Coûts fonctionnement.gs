@@ -1,4 +1,13 @@
 /**
+ * Module: Boosts & Coûts fonctionnement
+ * Rôle: assister la saisie manuelle des boosts marketing et des coûts fixes puis journaliser un résumé mensuel.
+ * Entrées publiques: addBoostPrompt(), addCostPrompt(), logMonthlyCostsAndBoosts().
+ * Dépendances: SpreadsheetApp (feuilles "Boosts", "Coûts fonctionnement", "Logs").
+ * Effets de bord: ouvre des prompts UI, insère des lignes, additionne les montants récents et écrit des logs.
+ * Pièges: prompts bloquants, conversions locales virgule/point, risque de quotas si journalisation fréquente.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Étape 7 — Boosts & Coûts fonctionnement (v1 simple)
  * - Deux prompts rapides pour ajouter des lignes dans les onglets Boosts / Coûts fonctionnement
  * - Un résumé mensuel (sommes) écrit dans Logs

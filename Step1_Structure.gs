@@ -1,3 +1,12 @@
+/**
+ * Module: Step1_Structure
+ * Rôle: créer/ordonner les onglets du CRM et appliquer formats, filtres et exemples.
+ * Entrées publiques: runStep1().
+ * Dépendances: SpreadsheetApp (multiples feuilles), log_() (non défini ici), Step3/Step8 hooks via variables globales.
+ * Effets de bord: efface et recrée les feuilles listées, applique formats et protections, insère données de démonstration.
+ * Pièges: destructif (clear contents), attention aux locales (formulaSep_), appels getRange multiples.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 /** Étape 1 : Structure des onglets + formats + validations */
 function formulaSep_() {
   var loc = SpreadsheetApp.getActive().getSpreadsheetLocale() || "";

@@ -1,4 +1,13 @@
 /**
+ * Module: Gmail_Ingest_Run
+ * Rôle: orchestrer l'ingestion Gmail en version standard (stock JSON, ventes, favoris/offres, achats).
+ * Entrées publiques: ingestAllLabels(), ingestStockJson(), ingestSales(), ingestFavsOffersVinted(), ingestPurchasesVinted().
+ * Dépendances: GmailApp (labels), SpreadsheetApp (Stock, Ventes, Achats), parseurs de Gmail_Ingest_Parsers, getConfig_().
+ * Effets de bord: marque les threads Traite/Erreur, upsert des lignes dans Stock/Ventes/Achats, incrémente compteurs.
+ * Pièges: accès cellule par cellule (risque quotas), cohérence avec Step8 override insertSale_(), labels config sensibles à la casse.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Scanners Gmail + upserts dans les feuilles.
  * Labels pris depuis Configuration.
  */

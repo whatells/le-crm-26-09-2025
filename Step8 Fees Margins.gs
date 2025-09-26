@@ -1,4 +1,13 @@
 /**
+ * Module: Step8_Fees_Margins
+ * Rôle: calculer commissions/marges avancées et surcharger insertSale_ pendant l'ingestion.
+ * Entrées publiques: step8RecalcAll(), step8RecalcCurrent(), insertSale_() override, step8CommissionFor_(), step8LookupCostBySku_().
+ * Dépendances: SpreadsheetApp (Ventes, Stock), Config Advanced (getPlatformFees_, getGlobalFlags_), Step3 caches, log_().
+ * Effets de bord: écrit frais/marges dans Ventes, lit coûts dans Stock, met à jour caches STEP8::COST_MAP.
+ * Pièges: override de insertSale_ doit rester compatible avec Gmail_Ingest_Run, conversions num/locale, invalidation caches.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Étape 8 — Calculs commissions & marges avancés
  * - Calcule la commission par plateforme: max(min, pct*prix + flat)
  * - Marge brute = PV − Prix achat − Commission − Frais port

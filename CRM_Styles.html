@@ -1,3 +1,12 @@
+<!--
+  Module: CRM_Styles.html
+  Rôle: définir la charte visuelle (couleurs, layout) des écrans CRM modernes.
+  Entrées publiques: n/a (inclus via <?!= include('CRM_Styles'); ?>).
+  Dépendances: appliqué aux composants déclarés dans CRM_Interface.html et CRM_Config.html.
+  Effets de bord: surcharge les styles globaux, définit variables CSS et composants réutilisables.
+  Pièges: reste chargé dans HtmlService (pas de @import externe), surveiller spécificité pour ne pas casser d'autres vues.
+  MAJ: 2025-09-26 – Codex Audit
+-->
 <style>
 /* Variables CSS inspirées de VintedCRM */
 :root {

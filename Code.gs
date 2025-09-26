@@ -1,4 +1,13 @@
 /**
+ * Module: Code
+ * Rôle: point d'entrée Sheets (menu CRM) et helpers HtmlService.
+ * Entrées publiques: onOpen(), openCRM(), openConfig(), include(), initializeStructure().
+ * Dépendances: SpreadsheetApp UI (menus, modales), HtmlService (Index, CRM_Config), createSheetsStructure() depuis CRM_DataService.
+ * Effets de bord: crée un menu personnalisé, ouvre des dialogues modaux, initialises les onglets si demandé.
+ * Pièges: respecter XFrameOptions ALLOWALL pour HtmlService, alerte utilisateur sur erreurs, attention aux appels multiples d'initializeStructure().
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * CRM Complet - Point d'entrée principal
  * Inspiré de VintedCRM.com pour l'ergonomie et les couleurs
  */

@@ -1,3 +1,12 @@
+/**
+ * Module: Dashboard
+ * Rôle: générer la feuille Dashboard avec KPI, blocs de données et graphiques.
+ * Entrées publiques: buildDashboard().
+ * Dépendances: SpreadsheetApp (feuilles Dashboard, Ventes, Stock, Boosts, Coûts fonctionnement), computeKPIs_(), buildMonthlyRevenue_(), buildPlatformSplit_().
+ * Effets de bord: efface et réécrit l'onglet Dashboard, crée des charts, lit massivement les données.
+ * Pièges: appels coûteux si feuilles volumineuses (préférer caches), conversions Date/Number, veiller à ne pas supprimer filtres personnalisés.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 /** Étape 9 — Dashboard : KPI + Graphiques (idempotent) */
 
 function buildDashboard() {

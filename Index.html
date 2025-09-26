@@ -1,3 +1,12 @@
+<!--
+  Module: Index.html
+  Rôle: shell SPA léger utilisant un bootstrap JSON préchargé.
+  Entrées publiques: boutons UI (btnRefreshAll, btnRebuildDash, btnStep3Refs, btnRecalcMargins, btnIngestFast, btnSaveCfg) relayés par Ui App.js.
+  Dépendances: BOOTSTRAP_JSON injecté, inclusion dynamique de 'Ui App.js', google.script.run.* exposés côté client.
+  Effets de bord: prépare la structure DOM et insère dynamiquement le script principal, remplace typographie unicode.
+  Pièges: injection directe de JSON non échappé (surveiller XSS), nécessite ALLOWALL sur HtmlService, large payload bootstrap possible.
+  MAJ: 2025-09-26 – Codex Audit
+-->
 <!DOCTYPE html>
 <html>
   <head>

@@ -1,3 +1,12 @@
+/**
+ * Module: ScanUnicode
+ * Rôle: audit des caractères unicode problématiques dans le projet Apps Script.
+ * Entrées publiques: scanProjectForUnicode().
+ * Dépendances: ScriptApp (ID), service avancé Script (Script.Projects).
+ * Effets de bord: journalise les lignes suspectes via Logger (pas de modifications).
+ * Pièges: nécessite activer l'API Apps Script, quotas de Script API, regex limitée aux caractères courants.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 // ===== ScanUnicode.gs — détecte … ’ ‘ “ ” dans tous les fichiers du projet =====
 // Requiert d'activer le service avancé "Apps Script API" (Script)
 

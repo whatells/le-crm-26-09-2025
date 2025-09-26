@@ -1,4 +1,13 @@
 /**
+ * Module: Config Advanced
+ * Rôle: helpers de lecture typée des paramètres avancés (commissions multi-plateforme, URSSAF, coûts fixes).
+ * Entrées publiques: cfgAll_(), cfgBool_(), cfgNum_(), getPlatformFees_(), getGlobalFlags_().
+ * Dépendances: getConfig_() (Config.gs) et structure de l'onglet Configuration.
+ * Effets de bord: aucun (lecture pure, conversion).
+ * Pièges: valeurs mal formatées (virgules vs points), prévoir defaults si les clés manquent.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Étape 8 — Lecture avancée de l'onglet Configuration
  * Clés supportées (exemples):
  *  - COMM_VINTED_PCT, COMM_VINTED_MIN, COMM_VINTED_FLAT

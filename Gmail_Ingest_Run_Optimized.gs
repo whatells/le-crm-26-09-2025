@@ -1,4 +1,13 @@
 /**
+ * Module: Gmail_Ingest_Run_Optimized
+ * Rôle: version optimisée de l'ingestion Gmail (batch, cache, pagination, idempotence avancée).
+ * Entrées publiques: ingestAllLabelsFast() et wrappers internes ingestStockJsonFast_(), ingestSalesFast_(), ingestPurchasesVintedFast_(), ingestFavsOffersFast_().
+ * Dépendances: GmailApp, CacheService/PropertiesService (stateGet_/statePut_), parseurs existants, SpreadsheetApp (Stock/Ventes/Achats).
+ * Effets de bord: met à jour labels, remplit les feuilles, persiste des curseurs/procIds dans l'état utilisateur.
+ * Pièges: veillez à purger les caches via step10ClearCaches(), quotas Gmail/UrlFetch selon volume, complexité accrue de pagination.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Étape 10 — Ingestion optimisée (batch + cache + idempotence rapide)
  * - Ne touche pas à tes anciens parseurs: on réutilise parseStockJsonMessage_, parseSaleMessage_, etc.
  * - Idempotence: on garde un set d'IDs déjà traités dans UserProperties (PROC_IDS) + Logs (fallback).
