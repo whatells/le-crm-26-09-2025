@@ -1,4 +1,13 @@
 /**
+ * Module: Ui_Server
+ * Rôle: exposer les endpoints serveur pour l'UI paginée (stock/ventes/dashboard/logs/config).
+ * Entrées publiques: ui_getDashboard(), ui_buildDashboard(), ui_getStockPage(), ui_step3RefreshRefs(), ui_getVentesPage(), ui_step8RecalcAll(), ui_getLogsTail(), ui_ingestFast(), ui_getConfig(), ui_saveConfig().
+ * Dépendances: timed(), getDashboardCached_(), getStockAllRows_(), getVentesAllRows_(), step3RefreshRefs(), step8RecalcAll(), saveConfigValues().
+ * Effets de bord: lit caches internes, invalide caches via purge*, lance recalculs, renvoie tableaux paginés.
+ * Pièges: fonctions dépendantes non définies dans ce fichier (doivent exister ailleurs), duplication avec PerfendPoints/Ui Server.html.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Ponts serveur pour l'UI popup (HtmlService)
  * — Appelle tes fonctions existantes sans rien réécrire.
  */

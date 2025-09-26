@@ -1,4 +1,13 @@
 /**
+ * Module: CRM_ConfigService
+ * Rôle: exposer CRUD configuration (lecture, sauvegarde, export, backup) pour l'UI.
+ * Entrées publiques: getConfiguration(), saveConfiguration(), getDefaultConfiguration(), createBackup(), exportAllData(), getPlatformCommission(), calculateSaleMargins().
+ * Dépendances: SpreadsheetApp (feuilles via SHEETS_CONFIG), Utilities (horodatage), CRM_DataService helpers (createSheetIfNotExists, flattenConfiguration).
+ * Effets de bord: lit/écrit l'onglet Configuration, crée des classeurs de backup, appelle SpreadsheetApp.create.
+ * Pièges: conversions JSON pour listes, risques de quotas Drive lors de backups, cohérence avec structure SHEETS_CONFIG.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Service de gestion de la configuration CRM
  */
 

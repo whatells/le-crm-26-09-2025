@@ -1,3 +1,12 @@
+<!--
+  Module: CRM_Scripts.html
+  Rôle: logique client de l'interface CRM riche (chargement des vues, filtres, analytics).
+  Entrées publiques: initializeApp(), switchView(), loadDashboardData(), loadStockData(), loadSalesData(), loadPurchasesData(), loadAnalyticsData(), saveConfiguration(), createBackup(), exportAllData().
+  Dépendances: google.script.run (getDashboardData, getStockData, getSalesData, getPurchasesData, getAnalyticsData, getConfiguration, saveConfiguration, createBackup, exportAllData), debounce(), formatters locaux.
+  Effets de bord: manipule DOM via innerHTML, gère états globaux, déclenche alertes toast.
+  Pièges: charges réseau multiples (risque quotas), DOM fragile si IDs changent, sanitize nécessaires avant injection HTML.
+  MAJ: 2025-09-26 – Codex Audit
+-->
 <script>
 // Variables globales
 let currentView = 'dashboard';

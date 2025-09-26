@@ -1,3 +1,12 @@
+/*
+ * Module: Ui app.css
+ * Rôle: styles de la SPA sombre (sidebar, tables, formulaires) pour Ui App.html.
+ * Entrées publiques: n/a (injecté via <style><?!= include('Ui app.css.html'); ?></style>).
+ * Dépendances: classes et IDs utilisés par Ui App.html et Ui App.js.
+ * Effets de bord: définit palette sombre, grilles, boutons et pager.
+ * Pièges: éviter conflits avec autres styles HtmlService, pas de @import externe.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 <style>
   *{box-sizing:border-box}
   body.dark{background:#0f1115;color:#e7e9ee;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}

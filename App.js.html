@@ -1,3 +1,12 @@
+<!--
+  Module: App.js (legacy UI bootstrap)
+  Rôle: gère la navigation de la version historique du CRM et orchestre les appels google.script.run.
+  Entrées publiques: charge loadDashboardData(), loadStockData(), loadSalesData(), loadPurchasesData(), loadAnalyticsData(), saveConfiguration().
+  Dépendances: google.script.run (Ui_Server / CRM_DataService), DOM éléments #kpiList/#stock-table, include('CRM_Scripts').
+  Effets de bord: manipule innerHTML, gère états locaux et verrous réseau.
+  Pièges: éviter les mutations hors promesse, attention aux quotas Apps Script si rafraîchissements répétés.
+  MAJ: 2025-09-26 – Codex Audit
+-->
 <!-- ========================
      FICHIER 5/4 — app.js.html
      JS client pour HtmlService (UI du CRM)

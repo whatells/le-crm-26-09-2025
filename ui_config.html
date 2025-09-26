@@ -1,3 +1,12 @@
+<!--
+  Module: ui_config.html
+  Rôle: formulaire compact de configuration (labels Gmail, commissions, flags).
+  Entrées publiques: formulaire #cfgForm géré par Ui_Config.gs via google.script.run.getKnownConfig/saveConfigValues.
+  Dépendances: Ui_Config.js inclus ailleurs (non présent ici), google.script.run, include('App.css') éventuel.
+  Effets de bord: rendu du formulaire, section actions (btn save via JS).
+  Pièges: champ JSON pour catégories, veillez à synchroniser noms d'inputs avec saveConfigValues().
+  MAJ: 2025-09-26 – Codex Audit
+-->
 <!DOCTYPE html>
 <html>
 <head>

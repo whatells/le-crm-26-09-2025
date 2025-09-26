@@ -1,4 +1,13 @@
 /**
+ * Module: BackupScriptApi
+ * Rôle: automatiser la sauvegarde complète d'un projet Apps Script via l'API Script et Drive.
+ * Entrées publiques: backupProjectUsingScriptApi(), scheduleDailyBackupScriptApi().
+ * Dépendances: UrlFetchApp (Script API), ScriptApp (token), DriveApp (dossiers/ZIP), SpreadsheetApp UI (alertes).
+ * Effets de bord: crée des dossiers horodatés, fichiers individuels, ZIP et summary.json; peut mettre à la corbeille d'anciens backups.
+ * Pièges: nécessite activation de l'API Script + scope script.projects, quotas UrlFetch/Drive, valeur TARGET_SCRIPT_ID à renseigner.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * ===== BackupScriptApi.gs =====
  * Sauvegarde 100% du code d'un projet Apps Script via Script API (UrlFetchApp).
  * - Exporte .gs, .html, .json (manifest si récupéré)

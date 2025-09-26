@@ -1,3 +1,12 @@
+/**
+ * Module: Step2_SkulTitre
+ * Rôle: maintenir cohérence SKU/Titre et relayer événements Étape 3 via onEdit.
+ * Entrées publiques: onEdit(e), fixOneStockRow_(), fixOneVenteRow_().
+ * Dépendances: SpreadsheetApp (Stock, Ventes, Achats), Step3 (step3PropagateRow_), Step8 (step8InvalidateCostCache_), log_().
+ * Effets de bord: modifie cellules lors d'éditions, force uppercase, ajoute SKU au titre, déclenche propagation prix.
+ * Pièges: onEdit doit rester rapide (<30s), expressions régulières sur SKU, dépendances conditionnelles (fonctions undefined ignorées).
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 // ==============================
 // FICHIER 2 / 3 : Step2_SkuTitre.gs (COMPLET — VERSION ÉTAPE 3)
 // ==============================

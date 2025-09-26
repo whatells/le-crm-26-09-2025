@@ -1,3 +1,12 @@
+/**
+ * Module: PerfendPoints
+ * Rôle: version performante des endpoints UI (bootstrap JSON, caches multi-niveaux, diagnostics).
+ * Entrées publiques: openCRM(), ui_getDashboard(), ui_getStockAll(), ui_getVentesAll(), ui_getConfig(), ui_getLogsTail(), ui_step3RefreshRefs(), ui_step8RecalcAll(), ui_saveConfig(), ui_ingestFast(), purge*(), cronRecomputeBootstrap(), setupTriggers().
+ * Dépendances: CacheService (script/document), PropertiesService, SpreadsheetApp (feuilles), HtmlService (Index), Step3/Step8/Ui_Config helpers, timed().
+ * Effets de bord: remplit caches chauds, écrit dans Properties, ouvre modales, peut modifier caches en enveloppant les fonctions existantes.
+ * Pièges: duplication d'endpoints avec Ui_Server (risque conflits), invalidation manuelle nécessaire après modifications, attention aux quotas lors du bootstrap complet.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 // ===== PerfEndpoints.gs — Full preload + multi-cache + diag =====
 
 // --- Clés de cache

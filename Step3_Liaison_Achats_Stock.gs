@@ -1,3 +1,12 @@
+/**
+ * Module: Step3_Liaison_Achats_Stock
+ * Rôle: synchroniser Achats ↔ Stock (références automatiques et propagation des prix).
+ * Entrées publiques: step3RefreshRefs(), step3PropagateAll(), step3PropagateCurrent().
+ * Dépendances: SpreadsheetApp (Achats, Stock), CacheService (STEP3::REF_PRICE_MAP), log_(), Step8 invalidate.
+ * Effets de bord: met à jour validations, remplit colonnes Réf Achat / Prix achat, utilise caches en Properties/Cache.
+ * Pièges: invalidation nécessaire avant recalcul, attention aux appels en masse (getRange volumineux), dépend des entêtes existants.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 // ==============================
 // FICHIER 3 / 3 : Step3_Liaison_Achats_Stock.gs (COMPLET)
 // ==============================

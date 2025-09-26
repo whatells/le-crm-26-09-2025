@@ -1,3 +1,12 @@
+<!--
+  Module: CRM_Config.html
+  Rôle: interface de configuration complète (général, plateformes, notifications) affichée dans un modal Sheets.
+  Entrées publiques: actions boutons saveConfiguration(), refreshData(), openQuickAdd() via CRM_Scripts.
+  Dépendances: include('CRM_Styles'), include('CRM_Scripts'), google.script.run.getConfiguration/saveConfiguration/createBackup/exportAllData.
+  Effets de bord: met à jour le DOM, déclenche des appels serveur et montre des états de chargement.
+  Pièges: éviter innerHTML non échappé, recharger les données après sauvegarde pour cohérence, attention aux réponses volumineuses.
+  MAJ: 2025-09-26 – Codex Audit
+-->
 <!DOCTYPE html>
 <html>
 <head>

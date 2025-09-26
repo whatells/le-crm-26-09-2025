@@ -1,4 +1,13 @@
 /**
+ * Module: Gmail_Ingest_Parsers
+ * Rôle: parseurs d'emails et gestion d'idempotence (Logs + cache d'IDs).
+ * Entrées publiques: alreadyProcessed_(), markProcessed_(), ensureLogsSheet_(), parse* helpers (utilisés par Gmail_Ingest_Run).
+ * Dépendances: GmailApp via consommateurs, SpreadsheetApp (Logs), PropertiesService/CacheService via stateGet_/statePut_.
+ * Effets de bord: écrit dans Logs, stocke des IDs traités dans UserProperties/Cache.
+ * Pièges: gérer la taille du cache (PROC_IDS_MAX_SIZE_), synchronisation retardée des logs, quotas Gmail si boucles trop larges.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
+/**
  * Parseurs d’emails par label.
  * Idempotence: on marque Logs + labels Traite/Erreur pour éviter les doublons.
  * NOTE: pas de variables globales de type SHEET_* ici pour éviter les collisions.

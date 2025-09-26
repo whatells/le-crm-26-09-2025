@@ -1,3 +1,12 @@
+/**
+ * Module: Ui App.js
+ * Rôle: logique client moderne (promise + badge réseau) pour la SPA principale.
+ * Entrées publiques: boot(), setTab(), run(), handlers sur btnRefreshAll, btnRebuildDash, btnStep3Refs, btnRecalcMargins, btnIngestFast, btnSaveCfg.
+ * Dépendances: google.script.run (ui_getDashboard, ui_getStockAll, ui_getVentesAll, ui_getConfig, ui_getLogsTail, ui_step3RefreshRefs, ui_step8RecalcAll, ui_ingestFast, ui_saveConfig, cron*), payload __BOOTSTRAP__.
+ * Effets de bord: met à jour le DOM, gère état global en mémoire, affiche badge réseau, manipule innerHTML (avec escapeHtml).
+ * Pièges: payload JSON volumineux, éviter multiples appels simultanés (locks), pas de sanitization automatique pour valeurs renvoyées.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 (function(){
   'use strict';
   console.time('bootstrap');

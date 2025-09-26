@@ -1,3 +1,12 @@
+<!--
+  Module: Ui Server (legacy stub)
+  Rôle: version alternative des endpoints serveur exposés à l'UI HtmlService.
+  Entrées publiques: ui_getDashboard(), ui_getStockPage(), ui_getVentesPage(), ui_getLogsTail(), ui_step3RefreshRefs(), ui_step8RecalcAll(), ui_ingestFast(), ui_getConfig(), ui_saveConfig().
+  Dépendances: SpreadsheetApp (Stock, Ventes, Logs), Step3/Step8, Ui_Config (saveConfigValues), Perf helpers éventuels.
+  Effets de bord: lit les feuilles, déclenche recalculs, purge caches, renvoie tableaux paginés.
+  Pièges: duplication avec Ui_Server.gs/PerfendPoints.gs (risque de divergences), accès cellule par cellule, quotas si pagination élevée.
+  MAJ: 2025-09-26 – Codex Audit
+-->
 /**
  * Ponts serveur pour l'UI (HtmlService SPA)
  * Aucune logique métier nouvelle ici : on appelle les fonctions déjà créées.

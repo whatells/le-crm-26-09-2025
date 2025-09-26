@@ -1,3 +1,12 @@
+<!--
+  Module: CRM_Interface.html
+  Rôle: gabarit SPA riche (header, navigation, vues multiples) pour la version complète du CRM.
+  Entrées publiques: boutons déclenchant switchView(), refreshData(), openQuickAdd(), loadDashboardData() depuis CRM_Scripts.
+  Dépendances: include('CRM_Styles'), include('CRM_Scripts'), google.script.run endpoints (voir CRM_Scripts).
+  Effets de bord: structure le DOM, contient placeholders pour tableaux et indicateurs mis à jour dynamiquement.
+  Pièges: veiller à charger CRM_Scripts après le DOM, synchroniser les IDs d'éléments avec les scripts.
+  MAJ: 2025-09-26 – Codex Audit
+-->
 <!DOCTYPE html>
 <html>
 <head>

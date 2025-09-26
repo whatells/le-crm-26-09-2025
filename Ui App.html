@@ -1,3 +1,12 @@
+<!--
+  Module: Ui App.html
+  Rôle: interface sombre (SPA) embarquée dans HtmlService avec onglets Dashboard/Ventes/Stock/Emails/Config.
+  Entrées publiques: boutons id="btnRebuildDash", "btnRecalcMargins", "btnStep3Refs", "btnIngestFast", navigation data-tab utilisés par Ui App.js.
+  Dépendances: Ui App.js (logiciel client), google.script.run endpoints définis côté serveur.
+  Effets de bord: structure le DOM, affiche placeholders et pager pour tableaux, boutons déclenchent scripts client.
+  Pièges: nécessite injection CSS correspondante, attention aux IDs cohérents avec le JS.
+  MAJ: 2025-09-26 – Codex Audit
+-->
 <!DOCTYPE html>
 <html>
 <head>

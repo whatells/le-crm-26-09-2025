@@ -1,3 +1,12 @@
+/**
+ * Module: app.js
+ * Rôle: squelette JS minimal (routing, ping serveur) pour index.html.
+ * Entrées publiques: setView(), bind(), handlers sur btnClose et btnPing.
+ * Dépendances: helpers qs/qsa (définis ailleurs), google.script.run.ping? (doit exister côté serveur).
+ * Effets de bord: modifie classes CSS pour afficher les vues, appelle google.script.run et ferme le modal via google.script.host.close().
+ * Pièges: fonctions utilitaires non définies dans ce fichier, ping nécessite endpoint existant, DOM selectors sensibles.
+ * MAJ: 2025-09-26 – Codex Audit
+ */
 /* Utilitaires DOM */
 function qs(sel, root) { return (root || document).querySelector(sel); }
 function qsa(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
