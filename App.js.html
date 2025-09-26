@@ -6,6 +6,7 @@
   Effets de bord: manipule innerHTML, gère états locaux et verrous réseau.
   Pièges: éviter les mutations hors promesse, attention aux quotas Apps Script si rafraîchissements répétés.
   MAJ: 2025-09-26 – Codex Audit
+  @change: rendu instantané depuis le cache bootstrap + nettoyage préfetch.
 -->
 <!-- ========================
      FICHIER 5/4 — app.js.html
@@ -315,14 +316,14 @@
 
     if (boot.kpis){ state.dash.loaded = true; state.dash.kpis = boot.kpis; renderKpis(boot.kpis); }
     if (boot.stock){
-      state.stock.total    = boot.stock.total||0;
-      state.stock.pageSize = boot.stock.pageSize||20;
-      if (boot.stock.page1){ state.stock.pages.set(1, { rows: boot.stock.page1 }); state.stock.loaded = true; }
+      state.stock.total    = boot.stock.total || 0;
+      state.stock.pageSize = boot.stock.pageSize || 20;
+      if (boot.stock.page1) state.stock.pages.set(1, { rows: boot.stock.page1 });
     }
     if (boot.ventes){
-      state.ventes.total    = boot.ventes.total||0;
-      state.ventes.pageSize = boot.ventes.pageSize||20;
-      if (boot.ventes.page1){ state.ventes.pages.set(1, { rows: boot.ventes.page1 }); state.ventes.loaded = true; }
+      state.ventes.total    = boot.ventes.total || 0;
+      state.ventes.pageSize = boot.ventes.pageSize || 20;
+      if (boot.ventes.page1) state.ventes.pages.set(1, { rows: boot.ventes.page1 });
     }
     if (boot.logs){ state.logs.loaded = true; state.logs.rows = boot.logs; renderTable($('#logsTable'), state.logs.rows, ['Horodatage','Niveau','Source','Message','Détails']); }
     if (boot.config){
@@ -336,19 +337,6 @@
       });
     }
 
-    // Prefetch silencieux (page 2) après premier paint
-    setTimeout(()=>{
-      if (state.stock.total > state.stock.pageSize && !state.stock.pages.has(2)){
-        google.script.run.withSuccessHandler(res=>{
-          state.stock.pages.set(2, { rows: res?.rows || [] });
-        }).ui_getStockPage(2, state.stock.pageSize);
-      }
-      if (state.ventes.total > state.ventes.pageSize && !state.ventes.pages.has(2)){
-        google.script.run.withSuccessHandler(res=>{
-          state.ventes.pages.set(2, { rows: res?.rows || [] });
-        }).ui_getVentesPage(2, state.ventes.pageSize);
-      }
-    }, 0);
   })();
   // ==========================================================================
 

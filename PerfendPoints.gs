@@ -6,7 +6,7 @@
  * Effets de bord: remplit caches chauds, écrit dans Properties, ouvre modales, peut modifier caches en enveloppant les fonctions existantes.
  * Pièges: duplication d'endpoints avec Ui_Server (risque conflits), invalidation manuelle nécessaire après modifications, attention aux quotas lors du bootstrap complet.
  * MAJ: 2025-09-26 – Codex Audit
- * @change: centralisation des endpoints UI, ajout du backoff partagé et invalidations explicites des caches.
+ * @change: centralisation endpoints UI + bootstrap page1/pageSize pour Stock & Ventes.
  */
 
 // ===== PerfEndpoints.gs — Full preload + multi-cache + diag =====
@@ -222,6 +222,7 @@ function setBootstrapJson_(json) {
 }
 
 function buildBootstrapPayload_() {
+  const PAGE_SIZE = 20;
   const kpis = timed('bootstrap:dashboard', () => ui_getDashboard().kpis);
   const stockR = timed('bootstrap:stock', () => ui_getStockAll());
   const ventR = timed('bootstrap:ventes', () => ui_getVentesAll());
@@ -231,8 +232,18 @@ function buildBootstrapPayload_() {
   return {
     ts: Date.now(),
     kpis: kpis,
-    stock: { total: stockR.total, page1: stockR.rows, headers: stockR.headers },
-    ventes: { total: ventR.total, page1: ventR.rows, headers: ventR.headers },
+    stock: {
+      total: stockR.total,
+      page1: (stockR.rows || []).slice(0, PAGE_SIZE),
+      headers: stockR.headers,
+      pageSize: PAGE_SIZE
+    },
+    ventes: {
+      total: ventR.total,
+      page1: (ventR.rows || []).slice(0, PAGE_SIZE),
+      headers: ventR.headers,
+      pageSize: PAGE_SIZE
+    },
     config: cfg,
     logs: logs
   };
