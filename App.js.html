@@ -1,0 +1,364 @@
+<!-- ========================
+     FICHIER 5/4 — app.js.html
+     JS client pour HtmlService (UI du CRM)
+     ======================== -->
+<script>
+(function(){
+  console.time('ui_boot');
+
+  // --- Utilitaires DOM ---
+  const $  = (s,root=document)=>root.querySelector(s);
+  const $$ = (s,root=document)=>Array.from(root.querySelectorAll(s));
+
+  // ================== PATCH 1 : état global + verrou ==================
+  const state = {
+    currentTab: null,
+    dash:  { loaded:false, kpis:null, inFlight:false },
+    stock: { loaded:false, pages:new Map(), total:null, pageSize:20, inFlight:false, page:1 },
+    ventes:{ loaded:false, pages:new Map(), total:null, pageSize:20, inFlight:false, page:1 },
+    logs:  { loaded:false, rows:null, inFlight:false },
+    config:{ loaded:false, rows:null, inFlight:false }
+  };
+
+  // Verrou anti-doublons de requêtes par section
+  function withLock(section){
+    if (!state[section]) return ()=>{};
+    if (state[section].inFlight) return false;
+    state[section].inFlight = true;
+    const t0 = performance.now();
+    return (label='')=>{
+      state[section].inFlight = false;
+      const dt = (performance.now()-t0)|0;
+      if (label) console.log(`[${section}] ${label} total=${dt}ms`);
+    };
+  }
+  // ===================================================================
+
+  // --- Petits helpers UI ---
+  function setLoading(msg){
+    const el = $('#status'); if (el) el.textContent = msg || '';
+  }
+
+  function renderKpis(list){
+    const wrap = $('#kpiList'); if (!wrap) return;
+    if (!list || !list.length){
+      wrap.innerHTML = '<div class="status">Aucun KPI disponible.</div>';
+      return;
+    }
+    wrap.innerHTML = list.map(([k,v])=>`
+      <div class="kpi">
+        <div class="kpi-label">${k}</div>
+        <div class="kpi-val">${v}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderTable(el, rows, headers){
+    if (!el) return;
+    if (!rows || !rows.length){
+      el.innerHTML = '<div class="status">Aucune donnée</div>';
+      return;
+    }
+    const head = headers && headers.length
+      ? `<thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>` : '';
+    const body = '<tbody>'+rows.map(r=>`<tr>${r.map(v=>`<td>${v==null?'':v}</td>`).join('')}</tr>`).join('')+'</tbody>';
+    el.innerHTML = `<table>${head}${body}</table>`;
+  }
+
+  // Pager local (pas d’IDs globaux partagés)
+  function renderPager(containerEl, total, page, size, onPage){
+    if (!containerEl) return;
+    const pages = Math.max(1, Math.ceil((total||0)/(size||1)));
+    containerEl.innerHTML = `
+      <button data-act="prev" ${page<=1?'disabled':''} aria-label="Page précédente">◀</button>
+      <span>${page}/${pages}</span>
+      <button data-act="next" ${page>=pages?'disabled':''} aria-label="Page suivante">▶</button>`;
+    containerEl.querySelector('[data-act="prev"]')?.addEventListener('click', ()=>onPage(page-1));
+    containerEl.querySelector('[data-act="next"]')?.addEventListener('click', ()=>onPage(page+1));
+  }
+
+  // ================== PATCH 2 : Navigation sans rechargement ==================
+  function setTab(name){
+    if (state.currentTab === name) return; // évite reload inutile
+    state.currentTab = name;
+
+    // Met à jour l’UI des onglets si présente
+    $$('.sidebar nav [data-tab]').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+    $$('.tab').forEach(t=>t.classList.toggle('active', t.id===`tab-${name}`));
+
+    // Charge seulement si nécessaire (mémoïsation)
+    if (name==='dash')   ensureDashboard();
+    if (name==='stock')  ensureStock();
+    if (name==='ventes') ensureVentes();
+    if (name==='emails') ensureLogs();
+    if (name==='config') ensureConfig();
+  }
+
+  // Délégation de clics pour les boutons d’onglets
+  document.addEventListener('click', (e)=>{
+    const btn = e.target.closest('[data-tab]');
+    if (btn) { setTab(btn.dataset.tab); }
+  });
+  // ===========================================================================
+
+  // ================== PATCH 3 : Stock (cache + prefetch) ==================
+  const STOCK_HEADERS = ['Date entrée','SKU','Titre','Photos','Catégorie','Marque','Taille','État','Prix achat (link)','Statut','Plateforme','Réf Achat','Favoris','Offres','Notes'];
+
+  function ensureStock(){
+    if (state.stock.loaded) return;         // déjà rendu au moins une fois
+    loadStock(state.stock.page || 1);
+  }
+
+  function loadStock(page){
+    const p = Math.max(1, page|0 || 1);
+    state.stock.page = p;
+
+    // Cache client : rendu instantané si la page existe déjà
+    if (state.stock.pages.has(p)){
+      const cached = state.stock.pages.get(p);
+      renderTable($('#stockTable'), cached.rows, STOCK_HEADERS);
+      renderPager($('#stockPager'), state.stock.total, p, state.stock.pageSize, loadStock);
+      state.stock.loaded = true;
+      prefetchStock(p+1);
+      return;
+    }
+
+    // Sinon on affiche un loader local et on fait 1 appel serveur
+    const tbl = $('#stockTable'); if (tbl) tbl.innerHTML = '<div class="status">Chargement…</div>';
+    const unlock = withLock('stock'); if (!unlock) return; // requête déjà en cours
+
+    console.time('ui_loadStock:network');
+    google.script.run.withSuccessHandler(res=>{
+      console.timeEnd('ui_loadStock:network');
+      state.stock.total = res?.total || 0;
+      state.stock.pages.set(p, { rows: res?.rows || [] });
+
+      renderTable($('#stockTable'), res?.rows || [], STOCK_HEADERS);
+      renderPager($('#stockPager'), state.stock.total, p, state.stock.pageSize, loadStock);
+
+      state.stock.loaded = true;
+      unlock('stock');
+
+      // Prefetch silencieux de la page suivante
+      prefetchStock(p+1);
+    }).ui_getStockPage(p, state.stock.pageSize);
+  }
+
+  function prefetchStock(nextPage){
+    const pages = Math.max(1, Math.ceil((state.stock.total||0)/(state.stock.pageSize||1)));
+    if (!state.stock.total || nextPage>pages) return;
+    if (state.stock.pages.has(nextPage)) return;
+    if (state.stock.inFlight) return;
+
+    const unlock = withLock('stock'); if (!unlock) return;
+    google.script.run.withSuccessHandler(res=>{
+      state.stock.pages.set(nextPage, { rows: res?.rows || [] });
+      unlock('stock-prefetch');
+    }).ui_getStockPage(nextPage, state.stock.pageSize);
+  }
+
+  // Actions Stock → invalidation ciblée puis reload 1
+  $('#btnStep3Refs')?.addEventListener('click', ()=>{
+    const b = $('#btnStep3Refs'); if (b) b.disabled = true;
+    state.stock.pages.clear(); state.stock.loaded = false;
+    google.script.run.withSuccessHandler(()=>{
+      if (b) b.disabled=false;
+      loadStock(1);
+    }).ui_step3RefreshRefs();
+  });
+  // =====================================================================
+
+  // ================== PATCH 3 bis : Ventes (cache + prefetch) ==================
+  const VENTES_HEADERS = ['Date','Plateforme','Titre','Prix','Frais/Comm','Frais port','Acheteur','SKU','Marge brute','Marge nette'];
+
+  function ensureVentes(){
+    if (state.ventes.loaded) return;
+    loadVentes(state.ventes.page || 1);
+  }
+
+  function loadVentes(page){
+    const p = Math.max(1, page|0 || 1);
+    state.ventes.page = p;
+
+    if (state.ventes.pages.has(p)){
+      const cached = state.ventes.pages.get(p);
+      renderTable($('#ventesTable'), cached.rows, VENTES_HEADERS);
+      renderPager($('#ventesPager'), state.ventes.total, p, state.ventes.pageSize, loadVentes);
+      state.ventes.loaded = true;
+      prefetchVentes(p+1);
+      return;
+    }
+
+    const tbl = $('#ventesTable'); if (tbl) tbl.innerHTML = '<div class="status">Chargement…</div>';
+    const unlock = withLock('ventes'); if (!unlock) return;
+
+    console.time('ui_loadVentes:network');
+    google.script.run.withSuccessHandler(res=>{
+      console.timeEnd('ui_loadVentes:network');
+
+      state.ventes.total = res?.total || 0;
+      state.ventes.pages.set(p, { rows: res?.rows || [] });
+
+      renderTable($('#ventesTable'), res?.rows || [], VENTES_HEADERS);
+      renderPager($('#ventesPager'), state.ventes.total, p, state.ventes.pageSize, loadVentes);
+
+      state.ventes.loaded = true;
+      unlock('ventes');
+
+      prefetchVentes(p+1);
+    }).ui_getVentesPage(p, state.ventes.pageSize);
+  }
+
+  function prefetchVentes(nextPage){
+    const pages = Math.max(1, Math.ceil((state.ventes.total||0)/(state.ventes.pageSize||1)));
+    if (!state.ventes.total || nextPage>pages) return;
+    if (state.ventes.pages.has(nextPage)) return;
+    if (state.ventes.inFlight) return;
+
+    const unlock = withLock('ventes'); if (!unlock) return;
+    google.script.run.withSuccessHandler(res=>{
+      state.ventes.pages.set(nextPage, { rows: res?.rows || [] });
+      unlock('ventes-prefetch');
+    }).ui_getVentesPage(nextPage, state.ventes.pageSize);
+  }
+
+  $('#btnRecalcMargins')?.addEventListener('click', ()=>{
+    const b = $('#btnRecalcMargins'); if (b) b.disabled = true;
+    state.ventes.pages.clear(); state.ventes.loaded = false;
+    google.script.run.withSuccessHandler(()=>{
+      if (b) b.disabled=false;
+      loadVentes(1);
+    }).ui_step8RecalcAll();
+  });
+  // ===========================================================================
+
+  // ================== Logs (mémoïsation simple) ==================
+  function ensureLogs(){
+    if (state.logs.loaded) return;
+    const tbl = $('#logsTable'); if (tbl) tbl.innerHTML = '<div class="status">Chargement…</div>';
+
+    const unlock = withLock('logs'); if (!unlock) return;
+    console.time('ui_loadLogs:network');
+    google.script.run.withSuccessHandler(rows=>{
+      console.timeEnd('ui_loadLogs:network');
+      state.logs.rows = rows || [];
+      state.logs.loaded = true;
+      renderTable($('#logsTable'), state.logs.rows, ['Horodatage','Niveau','Source','Message','Détails']);
+      unlock('logs');
+    }).ui_getLogsTail(50);
+  }
+
+  $('#btnIngestFast')?.addEventListener('click', ()=>{
+    const b = $('#btnIngestFast'); if (b) b.disabled = true;
+    state.logs.loaded = false; state.logs.rows = null;
+    google.script.run.withSuccessHandler(()=>{
+      if (b) b.disabled=false;
+      ensureLogs();
+    }).ui_ingestFast();
+  });
+  // =================================================================
+
+  // ================== Config (mémoïsation simple) ==================
+  function ensureConfig(){
+    if (state.config.loaded) return;
+    const form = $('#cfgForm'); if (form) form.classList.remove('hidden');
+    setLoading('Chargement…');
+    const unlock = withLock('config'); if (!unlock) return;
+
+    console.time('ui_loadConfig:network');
+    google.script.run.withSuccessHandler(rows=>{
+      console.timeEnd('ui_loadConfig:network');
+      state.config.rows = rows || [];
+      // Remplir le formulaire sans recréer les éléments
+      rows.forEach(({key,value})=>{
+        const el = form?.querySelector(`[name="${key}"]`);
+        if (!el) return;
+        if (el.type === 'checkbox') {
+          const v = String(value||'').toLowerCase();
+          el.checked = /^(true|1|oui|yes)$/i.test(v);
+        } else {
+          el.value = (value!=null ? value : '');
+        }
+      });
+      state.config.loaded = true;
+      setLoading('');
+      unlock('config');
+    }).ui_getConfig();
+  }
+
+  $('#btnSaveCfg')?.addEventListener('click', ()=>{
+    const b = $('#btnSaveCfg'); if (b){ b.disabled = true; b.textContent='Enregistrement…'; }
+    const rows = $$('#cfgForm input').map(el=>({
+      key: el.name,
+      value: (el.type==='checkbox' ? (el.checked?'TRUE':'FALSE') : el.value)
+    }));
+    google.script.run.withSuccessHandler(()=>{
+      if (b){ b.disabled=false; b.textContent='Enregistrer'; }
+    }).ui_saveConfig(rows);
+  });
+  // =================================================================
+
+  // ================== PATCH 4 : Bootstrap optionnel injecté ==================
+  // Si le serveur injecte window.__BOOTSTRAP__ (payload prêt), on remplit l’état et on rend
+  ;(function primeFromBootstrap(){
+    const boot = window.__BOOTSTRAP__;
+    if (!boot) return; // si pas d’injection, on laisse le flux normal
+
+    if (boot.kpis){ state.dash.loaded = true; state.dash.kpis = boot.kpis; renderKpis(boot.kpis); }
+    if (boot.stock){
+      state.stock.total    = boot.stock.total||0;
+      state.stock.pageSize = boot.stock.pageSize||20;
+      if (boot.stock.page1){ state.stock.pages.set(1, { rows: boot.stock.page1 }); state.stock.loaded = true; }
+    }
+    if (boot.ventes){
+      state.ventes.total    = boot.ventes.total||0;
+      state.ventes.pageSize = boot.ventes.pageSize||20;
+      if (boot.ventes.page1){ state.ventes.pages.set(1, { rows: boot.ventes.page1 }); state.ventes.loaded = true; }
+    }
+    if (boot.logs){ state.logs.loaded = true; state.logs.rows = boot.logs; renderTable($('#logsTable'), state.logs.rows, ['Horodatage','Niveau','Source','Message','Détails']); }
+    if (boot.config){
+      state.config.loaded = true; state.config.rows = boot.config;
+      const form = $('#cfgForm');
+      boot.config.forEach(({key,value})=>{
+        const el = form?.querySelector(`[name="${key}"]`);
+        if (!el) return;
+        if (el.type==='checkbox'){ el.checked = /^(true|1|oui|yes)$/i.test(String(value||'')); }
+        else { el.value = (value!=null ? value : ''); }
+      });
+    }
+
+    // Prefetch silencieux (page 2) après premier paint
+    setTimeout(()=>{
+      if (state.stock.total > state.stock.pageSize && !state.stock.pages.has(2)){
+        google.script.run.withSuccessHandler(res=>{
+          state.stock.pages.set(2, { rows: res?.rows || [] });
+        }).ui_getStockPage(2, state.stock.pageSize);
+      }
+      if (state.ventes.total > state.ventes.pageSize && !state.ventes.pages.has(2)){
+        google.script.run.withSuccessHandler(res=>{
+          state.ventes.pages.set(2, { rows: res?.rows || [] });
+        }).ui_getVentesPage(2, state.ventes.pageSize);
+      }
+    }, 0);
+  })();
+  // ==========================================================================
+
+  // --- Dashboard ensure (appel uniquement si pas injecté) ---
+  function ensureDashboard(){
+    if (state.dash.loaded) return;
+    const lock = withLock('dash'); if (!lock) return;
+    console.time('ui_loadDashboard:network');
+    google.script.run.withSuccessHandler(res=>{
+      console.timeEnd('ui_loadDashboard:network');
+      state.dash.kpis = res?.kpis || [];
+      state.dash.loaded = true;
+      renderKpis(state.dash.kpis);
+      lock('dashboard');
+    }).ui_getDashboard();
+  }
+
+  // --- Lancement : onglet par défaut ---
+  setTab('dash');
+  console.timeEnd('ui_boot');
+})();
+</script>

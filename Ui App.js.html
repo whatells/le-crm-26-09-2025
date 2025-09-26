@@ -1,0 +1,273 @@
+(function(){
+  'use strict';
+  console.time('bootstrap');
+
+  // ===== DOM helpers =====
+  const $  = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => Array.from((root||document).querySelectorAll(sel));
+
+  // ===== Badge reseau + hook google.script.run =====
+  (function(){
+    var badge = document.createElement('div');
+    badge.id = 'crm-net-badge';
+    badge.style.cssText = 'position:fixed;right:10px;bottom:10px;background:#111;color:#0f0;padding:6px 10px;border-radius:6px;font:12px monospace;z-index:999999;opacity:.9';
+    badge.textContent = 'UI loaded ' + (new Date()).toISOString().slice(0,19).replace('T',' ');
+    document.addEventListener('DOMContentLoaded', function(){ document.body.appendChild(badge); });
+
+    if (!window.__GSR_HOOKED__) {
+      window.__GSR_HOOKED__ = true;
+      window.__NET_COUNT__ = 0;
+      var _with = google.script.run.withSuccessHandler;
+      google.script.run.withSuccessHandler = function(fn){
+        var builder = _with.call(google.script.run, fn);
+        return new Proxy(builder, {
+          get: function(t, prop){
+            var v = t[prop];
+            if (typeof v === 'function'){
+              return function(){
+                window.__NET_COUNT__++;
+                badge.style.color = '#ff0';
+                badge.textContent = 'NETWORK #' + window.__NET_COUNT__ + ' -> ' + String(prop);
+                console.log('[NETWORK]', '#'+window.__NET_COUNT__, String(prop), arguments);
+                var ret = v.apply(t, arguments);
+                setTimeout(function(){ badge.style.color = '#0f0'; }, 600);
+                return ret;
+              };
+            }
+            return v;
+          }
+        });
+      };
+    }
+    window.__markCacheRender = function(tabName){
+      var b = document.getElementById('crm-net-badge');
+      if (!b) return;
+      b.style.color = '#0f0';
+      b.textContent = 'CACHE -> ' + tabName + ' (no network)';
+    };
+  })();
+
+  // ===== Lecture robuste du bootstrap =====
+  let payload = null;
+  try {
+    if (typeof window !== 'undefined' && typeof window.__BOOTSTRAP__ !== 'undefined') {
+      const raw = window.__BOOTSTRAP__;
+      if (raw && typeof raw === 'string') {
+        // on sanitise au cas ou
+        const safe = raw.replace(/\u2026/g,'...').replace(/\u2018|\u2019/g,"'").replace(/\u201C|\u201D/g,'"');
+        payload = JSON.parse(safe);
+        console.log('[BOOTSTRAP] parsed string ok');
+      } else {
+        payload = raw || null;
+        console.log('[BOOTSTRAP] object or null');
+      }
+    }
+  } catch(e){
+    console.warn('Bootstrap parse failed:', e && e.message ? e.message : e);
+    payload = null;
+    try {
+      const diag = document.createElement('div');
+      diag.style.cssText = 'position:fixed;left:8px;bottom:8px;max-width:48vw;background:#3b1f1f;color:#ffd7d7;padding:10px;border:2px solid #ff8a8a;font:13px system-ui;border-radius:6px;z-index:999999';
+      diag.textContent = 'Bootstrap invalide. Verifie Index.html (<?!= BOOTSTRAP_JSON ?>).';
+      document.body.appendChild(diag);
+    } catch(_){}
+  }
+
+  // ===== Etat global en memoire =====
+  const state = {
+    ts: payload?.ts || Date.now(),
+    kpis: Array.isArray(payload?.kpis) ? payload.kpis : [],
+    stock: {
+      headers: Array.isArray(payload?.stock?.headers) ? payload.stock.headers : [],
+      rows: Array.isArray(payload?.stock?.page1) ? payload.stock.page1.slice() : [],
+      total: Number(payload?.stock?.total) || (Array.isArray(payload?.stock?.page1) ? payload.stock.page1.length : 0)
+    },
+    ventes: {
+      headers: Array.isArray(payload?.ventes?.headers) ? payload.ventes.headers : [],
+      rows: Array.isArray(payload?.ventes?.page1) ? payload.ventes.page1.slice() : [],
+      total: Number(payload?.ventes?.total) || (Array.isArray(payload?.ventes?.page1) ? payload.ventes.page1.length : 0)
+    },
+    config: Array.isArray(payload?.config) ? payload.config : [],
+    logs: Array.isArray(payload?.logs) ? payload.logs : [],
+    tab: 'dash'
+  };
+
+  // ===== Wrapper Promises =====
+  function run(name, ...args){
+    return new Promise((resolve, reject)=>{
+      try{
+        google.script.run
+          .withFailureHandler(err=>reject(err))
+          .withSuccessHandler(res=>resolve(res))[name](...args);
+      }catch(e){ reject(e); }
+    });
+  }
+
+  // ===== Splash =====
+  function showSplash(msg){
+    let el = $('#splash');
+    if (!el){
+      el = document.createElement('div');
+      el.id = 'splash';
+      el.style.cssText = 'position:fixed;inset:0;background:rgba(11,16,28,.85);display:flex;align-items:center;justify-content:center;color:#fff;z-index:99990;font:600 16px system-ui';
+      el.innerHTML = '<div style="padding:18px;border-radius:8px;background:rgba(0,0,0,.35);min-width:260px;text-align:center"><div class="msg">Chargement...</div></div>';
+      document.body.appendChild(el);
+    }
+    el.querySelector('.msg').textContent = msg || 'Chargement...';
+    el.style.display = 'flex';
+  }
+  function hideSplash(){ const el = $('#splash'); if (el) el.style.display='none'; }
+
+  // ===== Rendu =====
+  function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function renderKpis(){
+    const wrap = $('#kpiList');
+    if (!wrap){ console.warn('[RENDER] kpiList missing'); return; }
+    if (!state.kpis.length){ wrap.innerHTML = '<div class="status">Aucun KPI</div>'; return; }
+    wrap.innerHTML = state.kpis.map(([k,v])=>`<div class="item"><div class="label">${escapeHtml(k)}</div><div class="val">${escapeHtml(String(v))}</div></div>`).join('');
+  }
+  function renderTable(el, headers, rows){
+    if (!el){ console.warn('[RENDER] table element missing'); return; }
+    if (!rows || !rows.length){ el.innerHTML = '<div class="status">Aucune donnee</div>'; return; }
+    const head = headers && headers.length ? `<thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>` : '';
+    const body = '<tbody>'+rows.map(r=>`<tr>${r.map(v=>`<td>${escapeHtml(v==null?'':String(v))}</td>`).join('')}</tr>`).join('')+'</tbody>';
+    el.innerHTML = `<table>${head}${body}</table>`;
+  }
+  function renderStock(){ renderTable($('#stockTable'), state.stock.headers, state.stock.rows); window.__markCacheRender && window.__markCacheRender('Stock'); }
+  function renderVentes(){ renderTable($('#ventesTable'), state.ventes.headers, state.ventes.rows); window.__markCacheRender && window.__markCacheRender('Ventes'); }
+  function renderLogs(){ renderTable($('#logsTable'), ['Horodatage','Niveau','Source','Message','Details'], state.logs); window.__markCacheRender && window.__markCacheRender('Logs'); }
+  function applyConfig(){
+    const form = $('#cfgForm'); if (!form) return;
+    state.config.forEach(({key,value})=>{
+      const el = form.querySelector(`[name="${key}"]`);
+      if (!el) return;
+      if (el.type==='checkbox') el.checked = /^(true|1|oui|yes)$/i.test(String(value||'')); else el.value = (value ?? '');
+    });
+    window.__markCacheRender && window.__markCacheRender('Config');
+  }
+
+  // ===== Navigation (0 reseau) =====
+  function setTab(name){
+    state.tab = name;
+    $$('.sidebar nav button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+    $$('.tab').forEach(t=>t.classList.toggle('active', t.id==='tab-'+name));
+    if (name==='dash'){ renderKpis(); window.__markCacheRender && window.__markCacheRender('Dashboard'); }
+    else if (name==='stock'){ renderStock(); }
+    else if (name==='ventes'){ renderVentes(); }
+    else if (name==='emails'){ renderLogs(); }
+    else if (name==='config'){ applyConfig(); }
+  }
+  document.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-tab]');
+    if (btn) setTab(btn.dataset.tab);
+  });
+
+  // ===== Boot (si pas de bootstrap: on charge tout une fois) =====
+  async function boot(){
+    try{
+      const haveBootstrap = !!(payload && (Array.isArray(payload.stock?.page1) || Array.isArray(payload.ventes?.page1) || Array.isArray(payload.kpis)));
+      if (haveBootstrap){
+        setTab('dash');
+        console.timeEnd('bootstrap');
+        return;
+      }
+      showSplash('Chargement initial des donnees...');
+      const [dash, stock, ventes, cfg, logs] = await Promise.all([
+        run('ui_getDashboard'),
+        run('ui_getStockAll'),
+        run('ui_getVentesAll'),
+        run('ui_getConfig'),
+        run('ui_getLogsTail', 50)
+      ]);
+      state.kpis = Array.isArray(dash?.kpis) ? dash.kpis : [];
+      state.stock = { headers: stock?.headers||[], rows: stock?.rows||[], total: Number(stock?.total)||0 };
+      state.ventes= { headers: ventes?.headers||[], rows: ventes?.rows||[], total: Number(ventes?.total)||0 };
+      state.config = Array.isArray(cfg) ? cfg : [];
+      state.logs   = Array.isArray(logs) ? logs : [];
+      hideSplash();
+      setTab('dash');
+      console.timeEnd('bootstrap');
+    }catch(e){
+      hideSplash();
+      console.error('Boot failed', e);
+      alert('Erreur de chargement initial — voir console');
+    }
+  }
+
+  // ===== Bouton ACTUALISER TOUT =====
+  $('#btnRefreshAll')?.addEventListener('click', async ()=>{
+    try{
+      showSplash('Actualisation complete...');
+      const [dash, stock, ventes, cfg, logs] = await Promise.all([
+        run('ui_getDashboard'),
+        run('ui_getStockAll'),
+        run('ui_getVentesAll'),
+        run('ui_getConfig'),
+        run('ui_getLogsTail', 50)
+      ]);
+      state.kpis = Array.isArray(dash?.kpis) ? dash.kpis : [];
+      state.stock = { headers: stock?.headers||[], rows: stock?.rows||[], total: Number(stock?.total)||0 };
+      state.ventes= { headers: ventes?.headers||[], rows: ventes?.rows||[], total: Number(ventes?.total)||0 };
+      state.config = Array.isArray(cfg) ? cfg : [];
+      state.logs   = Array.isArray(logs) ? logs : [];
+      hideSplash();
+      setTab(state.tab);
+    }catch(e){
+      hideSplash();
+      console.error('Refresh failed', e);
+      alert('Actualisation echouee — voir console');
+    }
+  });
+
+  // ===== Actions (rafraichissent la memoire) =====
+  $('#btnRebuildDash')?.addEventListener('click', async ()=>{
+    try{
+      showSplash('Rebuild KPI...');
+      await run('ui_buildDashboard');
+      const dash = await run('ui_getDashboard');
+      state.kpis = Array.isArray(dash?.kpis) ? dash.kpis : [];
+      hideSplash(); renderKpis(); window.__markCacheRender && window.__markCacheRender('Dashboard');
+    }catch(e){ hideSplash(); console.error(e); alert('Erreur rebuild'); }
+  });
+
+  $('#btnStep3Refs')?.addEventListener('click', async ()=>{
+    try{
+      showSplash('Rafraichissement Refs...');
+      await run('ui_step3RefreshRefs');
+      const stock = await run('ui_getStockAll');
+      state.stock = { headers: stock?.headers||[], rows: stock?.rows||[], total: Number(stock?.total)||0 };
+      hideSplash(); renderStock();
+    }catch(e){ hideSplash(); console.error(e); alert('Erreur Step3'); }
+  });
+
+  $('#btnRecalcMargins')?.addEventListener('click', async ()=>{
+    try{
+      showSplash('Recalcul des marges...');
+      await run('ui_step8RecalcAll');
+      const ventes = await run('ui_getVentesAll');
+      state.ventes = { headers: ventes?.headers||[], rows: ventes?.rows||[], total: Number(ventes?.total)||0 };
+      hideSplash(); renderVentes();
+    }catch(e){ hideSplash(); console.error(e); alert('Erreur recalc'); }
+  });
+
+  $('#btnIngestFast')?.addEventListener('click', async ()=>{
+    try{
+      showSplash('Ingestion...');
+      await run('ui_ingestFast');
+      const logs = await run('ui_getLogsTail', 50);
+      state.logs = Array.isArray(logs) ? logs : [];
+      hideSplash(); renderLogs();
+    }catch(e){ hideSplash(); console.error(e); alert('Erreur ingest'); }
+  });
+
+  $('#btnSaveCfg')?.addEventListener('click', async ()=>{
+    try{
+      const rows = $$('#cfgForm input').map(el=>({ key: el.name, value: (el.type==='checkbox'? (el.checked?'TRUE':'FALSE') : el.value) }));
+      await run('ui_saveConfig', rows);
+      alert('Config enregistree');
+    }catch(e){ console.error(e); alert('Erreur save config'); }
+  });
+
+  // ===== GO =====
+  boot();
+})();

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>CRM</title>
+    <style>
+      body{margin:0;font-family:Inter,system-ui,Arial,sans-serif}
+      .app{display:grid;grid-template-columns:220px 1fr;height:100vh}
+      .sidebar{background:#f6f8fb;border-right:1px solid #e4e7ef;padding:12px}
+      .sidebar nav button{display:block;width:100%;text-align:left;padding:8px 10px;margin:4px 0;border:0;background:#fff;border-radius:8px;cursor:pointer}
+      .sidebar nav button.active{background:#e9f0ff;font-weight:600}
+      main{padding:14px;overflow:auto}
+      .toolbar{display:flex;gap:8px;margin:10px 0}
+      .status{padding:8px;opacity:.85}
+      table{border-collapse:collapse;width:100%}
+      th,td{padding:8px 10px;border-bottom:1px solid #eceff4;text-align:left}
+      .tab{display:none}
+      .tab.active{display:block}
+    </style>
+  </head>
+  <body>
+
+    <!-- Injection JSON BRUTE AVANT les scripts UI -->
+    <script>
+      // IMPORTANT: <?!= ... ?> (UNESCAPED), surtout pas <?= ... ?>
+      window.__BOOTSTRAP__ = <?!= BOOTSTRAP_JSON ?>;
+      (function(){
+        var b = window.__BOOTSTRAP__;
+        var info = (!b ? 'null'
+                       : ('ok:' + ((b.stock && b.stock.page1 ? b.stock.page1.length : 0)) + '/'
+                              + ((b.ventes && b.ventes.page1 ? b.ventes.page1.length : 0))));
+        console.log('CRM bootstrap =', info);
+      })();
+    </script>
+
+    <div class="app">
+      <aside class="sidebar">
+        <nav>
+          <button data-tab="dash" class="active">Dashboard</button>
+          <button data-tab="stock">Stock</button>
+          <button data-tab="ventes">Ventes</button>
+          <button data-tab="emails">Logs</button>
+          <button data-tab="config">Config</button>
+        </nav>
+        <div class="toolbar">
+          <button id="btnRefreshAll">Actualiser tout</button>
+        </div>
+      </aside>
+
+      <main>
+        <section id="tab-dash" class="tab active">
+          <div id="kpiList"></div>
+          <div class="toolbar">
+            <button id="btnRebuildDash">Rebâtir KPI + Graphiques</button>
+          </div>
+        </section>
+
+        <section id="tab-stock" class="tab">
+          <div id="stockTable"></div>
+          <div class="toolbar">
+            <button id="btnStep3Refs">Step3: Rafraichir Réfs</button>
+          </div>
+        </section>
+
+        <section id="tab-ventes" class="tab">
+          <div id="ventesTable"></div>
+          <div class="toolbar">
+            <button id="btnRecalcMargins">Step8: Recalculer Marges</button>
+          </div>
+        </section>
+
+        <section id="tab-emails" class="tab">
+          <div id="logsTable"></div>
+          <div class="toolbar">
+            <button id="btnIngestFast">Ingest Fast</button>
+          </div>
+        </section>
+
+        <section id="tab-config" class="tab">
+          <form id="cfgForm"></form>
+          <div class="toolbar">
+            <button id="btnSaveCfg">Enregistrer</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- INCLUSION DU JS UI AVEC CACHE-BUSTING + SANITIZE ASCII -->
+    <? var __build = new Date().getTime();
+       var __src = HtmlService.createHtmlOutputFromFile('Ui App.js').getContent()
+                   .replace(/\u2026/g,'...')
+                   .replace(/\u2018|\u2019/g,"'")
+                   .replace(/\u201C|\u201D/g,'"');
+    ?>
+    <script>
+      (function(){
+        var src = <?= JSON.stringify(__src) ?>; // JS string ASCII-safe
+        var s = document.createElement('script');
+        s.type = 'text/javascript';
+        s.defer = true;
+        s.src = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(src) + '#v<?= __build ?>';
+        document.head.appendChild(s);
+      })();
+    </script>
+  </body>
+</html>
