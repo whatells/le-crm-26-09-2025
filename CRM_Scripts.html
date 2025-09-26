@@ -13,6 +13,15 @@ let currentView = 'dashboard';
 let currentData = {};
 let isLoading = false;
 
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Initialisation
 document.addEventListener('DOMContentLoaded', function() {
   initializeApp();
@@ -130,10 +139,10 @@ function updateRecentActivity(activities) {
   
   const html = activities.map(activity => `
     <div class="activity-item">
-      <div class="activity-icon">${getActivityIcon(activity.type)}</div>
+      <div class="activity-icon">${escapeHtml(getActivityIcon(activity.type))}</div>
       <div class="activity-content">
-        <div class="activity-title">${activity.title}</div>
-        <div class="activity-time">${formatDate(activity.date)}</div>
+        <div class="activity-title">${escapeHtml(activity.title)}</div>
+        <div class="activity-time">${escapeHtml(formatDate(activity.date))}</div>
       </div>
     </div>
   `).join('');
@@ -168,16 +177,16 @@ function updateStockTable(data) {
   
   const html = data.items.map(item => `
     <tr>
-      <td><strong>${item.sku}</strong></td>
-      <td>${item.title}</td>
-      <td>${item.category}</td>
-      <td>${formatCurrency(item.purchasePrice)}</td>
-      <td>${formatCurrency(item.targetPrice)}</td>
-      <td><span class="status-badge status-${item.status}">${item.status}</span></td>
+      <td><strong>${escapeHtml(item.sku)}</strong></td>
+      <td>${escapeHtml(item.title)}</td>
+      <td>${escapeHtml(item.category)}</td>
+      <td>${escapeHtml(formatCurrency(item.purchasePrice))}</td>
+      <td>${escapeHtml(formatCurrency(item.targetPrice))}</td>
+      <td><span class="status-badge status-${escapeHtml(item.status)}">${escapeHtml(item.status)}</span></td>
       <td>
         <div class="action-buttons">
-          <button class="action-btn action-btn-edit" onclick="editStock('${item.id}')">✏️</button>
-          <button class="action-btn action-btn-delete" onclick="deleteStock('${item.id}')">🗑️</button>
+          <button class="action-btn action-btn-edit" onclick="editStock('${escapeHtml(item.id)}')">✏️</button>
+          <button class="action-btn action-btn-delete" onclick="deleteStock('${escapeHtml(item.id)}')">🗑️</button>
         </div>
       </td>
     </tr>
@@ -193,7 +202,7 @@ function updateStockFilters(data) {
   const categories = [...new Set(data.items.map(item => item.category).filter(Boolean))];
   
   categorySelect.innerHTML = '<option value="">Toutes les catégories</option>' +
-    categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+    categories.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('');
 }
 
 // Ventes
@@ -223,16 +232,16 @@ function updateSalesTable(data) {
   
   const html = data.sales.map(sale => `
     <tr>
-      <td>${formatDate(sale.date)}</td>
-      <td>${sale.platform}</td>
-      <td>${sale.title}</td>
-      <td>${formatCurrency(sale.price)}</td>
-      <td>${formatCurrency(sale.fees)}</td>
-      <td class="${sale.margin >= 0 ? 'text-success' : 'text-danger'}">${formatCurrency(sale.margin)}</td>
+      <td>${escapeHtml(formatDate(sale.date))}</td>
+      <td>${escapeHtml(sale.platform)}</td>
+      <td>${escapeHtml(sale.title)}</td>
+      <td>${escapeHtml(formatCurrency(sale.price))}</td>
+      <td>${escapeHtml(formatCurrency(sale.fees))}</td>
+      <td class="${escapeHtml(sale.margin >= 0 ? 'text-success' : 'text-danger')}">${escapeHtml(formatCurrency(sale.margin))}</td>
       <td>
         <div class="action-buttons">
-          <button class="action-btn action-btn-edit" onclick="editSale('${sale.id}')">✏️</button>
-          <button class="action-btn action-btn-delete" onclick="deleteSale('${sale.id}')">🗑️</button>
+          <button class="action-btn action-btn-edit" onclick="editSale('${escapeHtml(sale.id)}')">✏️</button>
+          <button class="action-btn action-btn-delete" onclick="deleteSale('${escapeHtml(sale.id)}')">🗑️</button>
         </div>
       </td>
     </tr>
@@ -248,7 +257,7 @@ function updateSalesFilters(data) {
   const platforms = [...new Set(data.sales.map(sale => sale.platform).filter(Boolean))];
   
   platformSelect.innerHTML = '<option value="">Toutes les plateformes</option>' +
-    platforms.map(platform => `<option value="${platform}">${platform}</option>`).join('');
+    platforms.map(platform => `<option value="${escapeHtml(platform)}">${escapeHtml(platform)}</option>`).join('');
 }
 
 // Achats
@@ -278,16 +287,16 @@ function updatePurchasesTable(data) {
   
   const html = data.purchases.map(purchase => `
     <tr>
-      <td>${formatDate(purchase.date)}</td>
-      <td>${purchase.supplier}</td>
-      <td>${purchase.description}</td>
-      <td>${formatCurrency(purchase.price)}</td>
-      <td>${purchase.category}</td>
-      <td><span class="status-badge status-${purchase.status}">${purchase.status}</span></td>
+      <td>${escapeHtml(formatDate(purchase.date))}</td>
+      <td>${escapeHtml(purchase.supplier)}</td>
+      <td>${escapeHtml(purchase.description)}</td>
+      <td>${escapeHtml(formatCurrency(purchase.price))}</td>
+      <td>${escapeHtml(purchase.category)}</td>
+      <td><span class="status-badge status-${escapeHtml(purchase.status)}">${escapeHtml(purchase.status)}</span></td>
       <td>
         <div class="action-buttons">
-          <button class="action-btn action-btn-edit" onclick="editPurchase('${purchase.id}')">✏️</button>
-          <button class="action-btn action-btn-delete" onclick="deletePurchase('${purchase.id}')">🗑️</button>
+          <button class="action-btn action-btn-edit" onclick="editPurchase('${escapeHtml(purchase.id)}')">✏️</button>
+          <button class="action-btn action-btn-delete" onclick="deletePurchase('${escapeHtml(purchase.id)}')">🗑️</button>
         </div>
       </td>
     </tr>
@@ -303,7 +312,7 @@ function updatePurchasesFilters(data) {
   const suppliers = [...new Set(data.purchases.map(purchase => purchase.supplier).filter(Boolean))];
   
   supplierSelect.innerHTML = '<option value="">Tous les fournisseurs</option>' +
-    suppliers.map(supplier => `<option value="${supplier}">${supplier}</option>`).join('');
+    suppliers.map(supplier => `<option value="${escapeHtml(supplier)}">${escapeHtml(supplier)}</option>`).join('');
 }
 
 // Analytics
@@ -339,10 +348,10 @@ function updateTopItems(items) {
   
   const html = items.map((item, index) => `
     <div class="activity-item">
-      <div class="activity-icon">${index + 1}</div>
+      <div class="activity-icon">${escapeHtml(index + 1)}</div>
       <div class="activity-content">
-        <div class="activity-title">${item.title}</div>
-        <div class="activity-time">${formatCurrency(item.revenue)} • ${item.sales} ventes</div>
+        <div class="activity-title">${escapeHtml(item.title)}</div>
+        <div class="activity-time">${escapeHtml(formatCurrency(item.revenue))} • ${escapeHtml(item.sales)} ventes</div>
       </div>
     </div>
   `).join('');
@@ -438,7 +447,7 @@ function getSaleForm() {
     </div>
     <div class="form-group">
       <label class="form-label">Date de vente</label>
-      <input type="date" id="sale-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
+      <input type="date" id="sale-date" class="form-input" value="${escapeHtml(new Date().toISOString().split('T')[0])}">
     </div>
   `;
 }
@@ -469,7 +478,7 @@ function getPurchaseForm() {
     </div>
     <div class="form-group">
       <label class="form-label">Date d'achat</label>
-      <input type="date" id="purchase-date" class="form-input" value="${new Date().toISOString().split('T')[0]}">
+      <input type="date" id="purchase-date" class="form-input" value="${escapeHtml(new Date().toISOString().split('T')[0])}">
     </div>
     <div class="form-group">
       <label class="form-label">Notes</label>
@@ -600,7 +609,7 @@ function showModal(title, body, buttons) {
   
   const footer = document.getElementById('modal-footer');
   footer.innerHTML = buttons.map(btn => 
-    `<button class="btn ${btn.class}" onclick="${btn.action}">${btn.text}</button>`
+    `<button class="btn ${escapeHtml(btn.class)}" onclick="${escapeHtml(btn.action)}">${escapeHtml(btn.text)}</button>`
   ).join('');
   
   document.getElementById('modal-overlay').classList.remove('hidden');

@@ -436,6 +436,15 @@
     // Variables globales
     let configData = {};
 
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     // Initialisation
     document.addEventListener('DOMContentLoaded', function() {
       loadConfiguration();
@@ -502,7 +511,7 @@
       const container = document.getElementById('categories-list');
       container.innerHTML = categories.map(category => `
         <div class="category-item">
-          <input type="text" class="form-input" value="${category}" readonly>
+          <input type="text" class="form-input" value="${escapeHtml(category)}" readonly>
           <button class="btn btn-outline btn-sm" onclick="removeCategory(this)">🗑️</button>
         </div>
       `).join('');
@@ -520,7 +529,7 @@
       const container = document.getElementById('categories-list');
       const newCategoryHtml = `
         <div class="category-item">
-          <input type="text" class="form-input" value="${categoryName}" readonly>
+          <input type="text" class="form-input" value="${escapeHtml(categoryName)}" readonly>
           <button class="btn btn-outline btn-sm" onclick="removeCategory(this)">🗑️</button>
         </div>
       `;
