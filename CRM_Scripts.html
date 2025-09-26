@@ -1,18 +1,51 @@
 <!--
   Module: CRM_Scripts.html
   Rôle: logique client de l'interface CRM riche (chargement des vues, filtres, analytics).
-  Entrées publiques: initializeApp(), switchView(), loadDashboardData(), loadStockData(), loadSalesData(), loadPurchasesData(), loadAnalyticsData(), saveConfiguration(), createBackup(), exportAllData().
-  Dépendances: google.script.run (getDashboardData, getStockData, getSalesData, getPurchasesData, getAnalyticsData, getConfiguration, saveConfiguration, createBackup, exportAllData), debounce(), formatters locaux.
+  Entrées publiques: initializeApp(), switchView(), refreshAll(), openQuickAdd(), saveStock(), saveSale(), savePurchase(),
+    createBackup(), exportAllData().
+  Dépendances: google.script.run (ui_getDashboard, ui_getStockAll, ui_getVentesAll, ui_getConfig, ui_getLogsTail,
+    getPurchasesData, getAnalyticsData, saveConfiguration, createBackup, exportAllData, addStock, addSale, addPurchase,
+    generateReport), debounce(), formatters locaux.
   Effets de bord: manipule DOM via innerHTML, gère états globaux, déclenche alertes toast.
-  Pièges: charges réseau multiples (risque quotas), DOM fragile si IDs changent, sanitize nécessaires avant injection HTML.
+  Pièges: conserver les IDs du DOM, éviter les charges réseau multiples, sanitize nécessaires avant injection HTML.
   MAJ: 2025-09-26 – Codex Audit
 -->
 <script>
-// Variables globales
-let currentView = 'dashboard';
-let currentData = {};
-let isLoading = false;
+// ========================= État Global =========================
+const state = {
+  tab: 'dashboard',
+  dash: { data: null, loaded: false },
+  stock: {
+    data: null,
+    loaded: false,
+    searchTerm: '',
+    filters: { category: '', status: '' }
+  },
+  ventes: {
+    data: null,
+    loaded: false,
+    searchTerm: '',
+    filters: { platform: '', dateFrom: '', dateTo: '' }
+  },
+  achats: {
+    data: null,
+    loaded: false,
+    searchTerm: '',
+    filters: { supplier: '', dateFrom: '', dateTo: '' }
+  },
+  analytics: {
+    data: {},
+    loaded: false,
+    currentPeriod: '7'
+  },
+  logs: { data: null, loaded: false },
+  config: { data: null, loaded: false }
+};
 
+let isLoading = false;
+let refreshInProgress = false;
+
+// ========================= Helpers =========================
 function escapeHtml(value) {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -22,121 +55,296 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-// Initialisation
-document.addEventListener('DOMContentLoaded', function() {
+function run(name, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(reject)[name](...args);
+  });
+}
+
+function parseNumber(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (!value) {
+    return 0;
+  }
+  const normalized = String(value)
+    .replace(/[^0-9,.-]/g, '')
+    .replace(/,(?=[^,]*,)/g, '')
+    .replace(',', '.');
+  const parsed = parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeString(value) {
+  return String(value == null ? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function parseDateValue(value) {
+  if (!value) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value;
+  }
+  if (typeof value === 'number') {
+    // Conversion Google Sheets (jours depuis 1899-12-30)
+    const ms = (value - 25569) * 86400 * 1000;
+    const date = new Date(ms);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatCurrency(amount) {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'EUR'
+  }).format(amount || 0);
+}
+
+function formatPercentage(value) {
+  return (value || 0).toFixed(1) + '%';
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('fr-FR');
+}
+
+function getActivityIcon(type) {
+  const icons = {
+    sale: '💰',
+    purchase: '🛒',
+    stock: '📦',
+    default: '📋'
+  };
+  return icons[type] || icons.default;
+}
+
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// ========================= Initialisation =========================
+document.addEventListener('DOMContentLoaded', () => {
   initializeApp();
 });
 
-function initializeApp() {
-  console.log('🚀 Initialisation du CRM...');
-  loadDashboardData();
+async function initializeApp() {
+  console.log('🚀 Initialisation du CRM (SPA cache)...');
   setupEventListeners();
+  await bootstrapApp();
 }
 
-function setupEventListeners() {
-  // Recherche en temps réel
-  const searchInputs = document.querySelectorAll('.search-input');
-  searchInputs.forEach(input => {
-    input.addEventListener('input', debounce(handleSearch, 300));
-  });
-
-  // Filtres
-  const filterSelects = document.querySelectorAll('.filter-select');
-  filterSelects.forEach(select => {
-    select.addEventListener('change', handleFilter);
-  });
-
-  // Dates
-  const dateInputs = document.querySelectorAll('.filter-input[type="date"]');
-  dateInputs.forEach(input => {
-    input.addEventListener('change', handleFilter);
-  });
+async function bootstrapApp() {
+  try {
+    showLoading();
+    const bundle = await fetchAllData();
+    applyDataBundle(bundle);
+    hideLoading();
+    switchView('dashboard');
+  } catch (error) {
+    hideLoading();
+    console.error('Erreur lors de l\'initialisation', error);
+    showError('Impossible de charger les données initiales.');
+  }
 }
 
-// Navigation entre vues
+function getAnalyticsPeriods() {
+  const select = document.getElementById('analytics-period');
+  if (!select) {
+    return ['7', '30', '90', '365'];
+  }
+  const values = Array.from(select.options)
+    .map(option => option.value || option.textContent || '')
+    .map(value => value.trim())
+    .filter(Boolean);
+  if (!values.length) {
+    return ['7', '30', '90', '365'];
+  }
+  return Array.from(new Set(values));
+}
+
+async function fetchAllData() {
+  const analyticsPeriods = getAnalyticsPeriods();
+
+  const [dashboard, stockAll, ventesAll, stockLegacy, purchases, analyticsResults, config, logs] = await Promise.all([
+    run('ui_getDashboard'),
+    run('ui_getStockAll'),
+    run('ui_getVentesAll'),
+    run('getStockData').catch(error => {
+      console.warn('Chargement getStockData échoué, fallback sur ui_getStockAll', error);
+      return null;
+    }),
+    run('getPurchasesData').catch(error => {
+      console.warn('Chargement des achats échoué', error);
+      return { purchases: [] };
+    }),
+    Promise.all(
+      analyticsPeriods.map(period =>
+        run('getAnalyticsData', period).catch(error => {
+          console.warn(`Chargement analytics (${period}) échoué`, error);
+          return { topItems: [] };
+        })
+      )
+    ),
+    run('ui_getConfig').catch(error => {
+      console.warn('Chargement config échoué', error);
+      return null;
+    }),
+    run('ui_getLogsTail', 50).catch(error => {
+      console.warn('Chargement logs échoué', error);
+      return [];
+    })
+  ]);
+
+  return {
+    dashboard,
+    stockAll,
+    ventesAll,
+    stockLegacy,
+    purchases,
+    analyticsPeriods,
+    analyticsResults,
+    config,
+    logs
+  };
+}
+
+function applyDataBundle(bundle) {
+  const stockData = mapStockData(bundle.stockAll, bundle.stockLegacy);
+  state.stock.data = stockData;
+  state.stock.loaded = true;
+
+  const salesData = mapSalesData(bundle.ventesAll);
+  state.ventes.data = salesData;
+  state.ventes.loaded = true;
+
+  const purchasesData = mapPurchasesData(bundle.purchases);
+  state.achats.data = purchasesData;
+  state.achats.loaded = true;
+
+  const analyticsData = mapAnalyticsData(bundle.analyticsPeriods, bundle.analyticsResults);
+  state.analytics.data = analyticsData;
+  state.analytics.loaded = true;
+  if (!state.analytics.currentPeriod && bundle.analyticsPeriods.length) {
+    state.analytics.currentPeriod = bundle.analyticsPeriods[0];
+  }
+
+  state.dash.data = mapDashboardData(bundle.dashboard, stockData, salesData, purchasesData);
+  state.dash.loaded = true;
+
+  state.logs.data = Array.isArray(bundle.logs) ? bundle.logs : [];
+  state.logs.loaded = true;
+
+  state.config.data = bundle.config;
+  state.config.loaded = true;
+}
+
+// ========================= Navigation =========================
 function switchView(viewName) {
-  if (isLoading) return;
-  
-  // Masquer toutes les vues
+  state.tab = viewName;
+
   document.querySelectorAll('.view').forEach(view => {
-    view.classList.remove('active');
+    view.classList.toggle('active', view.id === `${viewName}-view`);
   });
-  
-  // Désactiver tous les nav items
+
   document.querySelectorAll('.nav-item').forEach(item => {
-    item.classList.remove('active');
+    item.classList.toggle('active', item.dataset.view === viewName);
   });
-  
-  // Activer la vue sélectionnée
-  const targetView = document.getElementById(viewName + '-view');
-  const targetNav = document.querySelector(`[data-view="${viewName}"]`);
-  
-  if (targetView && targetNav) {
-    targetView.classList.add('active');
-    targetNav.classList.add('active');
-    currentView = viewName;
-    
-    // Charger les données spécifiques à la vue
-    loadViewData(viewName);
+
+  if (viewName === 'dashboard') {
+    renderDashboard(state.dash.data);
+  } else if (viewName === 'stock') {
+    renderStock(state.stock.data);
+  } else if (viewName === 'ventes') {
+    renderSales(state.ventes.data);
+  } else if (viewName === 'achats') {
+    renderPurchases(state.achats.data);
+  } else if (viewName === 'analytics') {
+    renderAnalytics(state.analytics.data);
   }
 }
 
-// Chargement des données par vue
-function loadViewData(viewName) {
-  switch(viewName) {
-    case 'dashboard':
-      loadDashboardData();
-      break;
-    case 'stock':
-      loadStockData();
-      break;
-    case 'ventes':
-      loadSalesData();
-      break;
-    case 'achats':
-      loadPurchasesData();
-      break;
-    case 'analytics':
-      loadAnalyticsData();
-      break;
+// ========================= Refresh Global =========================
+async function refreshAll() {
+  if (refreshInProgress) {
+    return;
+  }
+  refreshInProgress = true;
+
+  const refreshButton = document.getElementById('btnRefresh');
+  if (refreshButton) {
+    refreshButton.disabled = true;
+  }
+
+  try {
+    showLoading();
+    const bundle = await fetchAllData();
+    applyDataBundle(bundle);
+    switchView(state.tab);
+  } catch (error) {
+    console.error('Erreur refreshAll', error);
+    showError('Impossible de rafraîchir les données.');
+  } finally {
+    hideLoading();
+    refreshInProgress = false;
+    if (refreshButton) {
+      refreshButton.disabled = false;
+    }
   }
 }
 
-// Dashboard
-function loadDashboardData() {
-  showLoading();
-  
-  google.script.run
-    .withSuccessHandler(function(data) {
-      hideLoading();
-      updateDashboard(data);
-    })
-    .withFailureHandler(function(error) {
-      hideLoading();
-      showError('Erreur lors du chargement du dashboard: ' + error);
-    })
-    .getDashboardData();
+function refreshData() {
+  return refreshAll();
 }
 
-function updateDashboard(data) {
-  // Mise à jour des statistiques
+// ========================= Rendu des vues =========================
+function renderDashboard(data) {
+  if (!data) {
+    document.getElementById('total-revenue').textContent = formatCurrency(0);
+    document.getElementById('total-stock').textContent = '0';
+    document.getElementById('total-sales').textContent = '0';
+    document.getElementById('avg-margin').textContent = formatPercentage(0);
+    renderRecentActivity([]);
+    return;
+  }
+
   document.getElementById('total-revenue').textContent = formatCurrency(data.totalRevenue || 0);
   document.getElementById('total-stock').textContent = data.totalStock || 0;
   document.getElementById('total-sales').textContent = data.totalSales || 0;
   document.getElementById('avg-margin').textContent = formatPercentage(data.avgMargin || 0);
-  
-  // Mise à jour de l'activité récente
-  updateRecentActivity(data.recentActivity || []);
+  renderRecentActivity(data.recentActivity || []);
 }
 
-function updateRecentActivity(activities) {
+function renderRecentActivity(activities) {
   const container = document.getElementById('recent-activity');
-  
+  if (!container) {
+    return;
+  }
+
   if (!activities.length) {
     container.innerHTML = '<div class="text-center text-secondary">Aucune activité récente</div>';
     return;
   }
-  
+
   const html = activities.map(activity => `
     <div class="activity-item">
       <div class="activity-icon">${escapeHtml(getActivityIcon(activity.type))}</div>
@@ -146,220 +354,560 @@ function updateRecentActivity(activities) {
       </div>
     </div>
   `).join('');
-  
+
   container.innerHTML = html;
 }
 
-// Stock
-function loadStockData() {
-  showLoading();
-  
-  google.script.run
-    .withSuccessHandler(function(data) {
-      hideLoading();
-      updateStockTable(data);
-      updateStockFilters(data);
-    })
-    .withFailureHandler(function(error) {
-      hideLoading();
-      showError('Erreur lors du chargement du stock: ' + error);
-    })
-    .getStockData();
-}
-
-function updateStockTable(data) {
+function renderStock(data) {
   const tbody = document.querySelector('#stock-table tbody');
-  
-  if (!data.items || !data.items.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun article en stock</td></tr>';
+  if (!tbody) {
     return;
   }
-  
-  const html = data.items.map(item => `
-    <tr>
-      <td><strong>${escapeHtml(item.sku)}</strong></td>
-      <td>${escapeHtml(item.title)}</td>
-      <td>${escapeHtml(item.category)}</td>
-      <td>${escapeHtml(formatCurrency(item.purchasePrice))}</td>
-      <td>${escapeHtml(formatCurrency(item.targetPrice))}</td>
-      <td><span class="status-badge status-${escapeHtml(item.status)}">${escapeHtml(item.status)}</span></td>
-      <td>
-        <div class="action-buttons">
-          <button class="action-btn action-btn-edit" onclick="editStock('${escapeHtml(item.id)}')">✏️</button>
-          <button class="action-btn action-btn-delete" onclick="deleteStock('${escapeHtml(item.id)}')">🗑️</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-  
-  tbody.innerHTML = html;
-  currentData.stock = data.items;
+
+  if (!data || !Array.isArray(data.items)) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucune donnée disponible</td></tr>';
+    return;
+  }
+
+  const filters = state.stock.filters;
+  const search = (state.stock.searchTerm || '').trim().toLowerCase();
+
+  const filteredItems = data.items.filter(item => {
+    if (filters.category && normalizeString(item.category) !== normalizeString(filters.category)) {
+      return false;
+    }
+    if (filters.status && normalizeString(item.status) !== normalizeString(filters.status)) {
+      return false;
+    }
+    if (search) {
+      const haystack = [item.sku, item.title, item.category, item.status, item.platform, item.notes]
+        .map(value => normalizeString(value))
+        .join(' ');
+      if (!haystack.includes(search)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  if (!filteredItems.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun article correspondant</td></tr>';
+  } else {
+    const html = filteredItems.map(item => `
+      <tr>
+        <td><strong>${escapeHtml(item.sku)}</strong></td>
+        <td>${escapeHtml(item.title)}</td>
+        <td>${escapeHtml(item.category)}</td>
+        <td>${escapeHtml(formatCurrency(item.purchasePrice))}</td>
+        <td>${escapeHtml(formatCurrency(item.targetPrice))}</td>
+        <td><span class="status-badge status-${escapeHtml(normalizeString(item.status) || 'disponible')}">${escapeHtml(item.status || '')}</span></td>
+        <td>
+          <div class="action-buttons">
+            <button class="action-btn action-btn-edit" onclick="editStock('${escapeHtml(String(item.id))}')">✏️</button>
+            <button class="action-btn action-btn-delete" onclick="deleteStock('${escapeHtml(String(item.id))}')">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+    tbody.innerHTML = html;
+  }
+
+  updateStockFilters(data.items);
 }
 
-function updateStockFilters(data) {
-  // Mise à jour du filtre catégories
+function updateStockFilters(items) {
   const categorySelect = document.getElementById('stock-category');
-  const categories = [...new Set(data.items.map(item => item.category).filter(Boolean))];
-  
+  if (!categorySelect) {
+    return;
+  }
+
+  const categories = Array.from(new Set(
+    items
+      .map(item => item.category)
+      .filter(Boolean)
+      .map(category => category.trim())
+  )).sort((a, b) => a.localeCompare(b));
+
+  const previousValue = state.stock.filters.category || '';
   categorySelect.innerHTML = '<option value="">Toutes les catégories</option>' +
     categories.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('');
+  categorySelect.value = previousValue;
 }
 
-// Ventes
-function loadSalesData() {
-  showLoading();
-  
-  google.script.run
-    .withSuccessHandler(function(data) {
-      hideLoading();
-      updateSalesTable(data);
-      updateSalesFilters(data);
-    })
-    .withFailureHandler(function(error) {
-      hideLoading();
-      showError('Erreur lors du chargement des ventes: ' + error);
-    })
-    .getSalesData();
-}
-
-function updateSalesTable(data) {
+function renderSales(data) {
   const tbody = document.querySelector('#sales-table tbody');
-  
-  if (!data.sales || !data.sales.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucune vente enregistrée</td></tr>';
+  if (!tbody) {
     return;
   }
-  
-  const html = data.sales.map(sale => `
-    <tr>
-      <td>${escapeHtml(formatDate(sale.date))}</td>
-      <td>${escapeHtml(sale.platform)}</td>
-      <td>${escapeHtml(sale.title)}</td>
-      <td>${escapeHtml(formatCurrency(sale.price))}</td>
-      <td>${escapeHtml(formatCurrency(sale.fees))}</td>
-      <td class="${escapeHtml(sale.margin >= 0 ? 'text-success' : 'text-danger')}">${escapeHtml(formatCurrency(sale.margin))}</td>
-      <td>
-        <div class="action-buttons">
-          <button class="action-btn action-btn-edit" onclick="editSale('${escapeHtml(sale.id)}')">✏️</button>
-          <button class="action-btn action-btn-delete" onclick="deleteSale('${escapeHtml(sale.id)}')">🗑️</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-  
-  tbody.innerHTML = html;
-  currentData.sales = data.sales;
+
+  if (!data || !Array.isArray(data.sales)) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucune donnée disponible</td></tr>';
+    return;
+  }
+
+  const filters = state.ventes.filters;
+  const search = (state.ventes.searchTerm || '').trim().toLowerCase();
+  const dateFrom = filters.dateFrom ? parseDateValue(filters.dateFrom) : null;
+  const dateTo = filters.dateTo ? parseDateValue(filters.dateTo) : null;
+
+  const filteredSales = data.sales.filter(sale => {
+    if (filters.platform && normalizeString(sale.platform) !== normalizeString(filters.platform)) {
+      return false;
+    }
+
+    const saleDate = parseDateValue(sale.date);
+    if (dateFrom && saleDate && saleDate < dateFrom) {
+      return false;
+    }
+    if (dateTo && saleDate && saleDate > dateTo) {
+      return false;
+    }
+
+    if (search) {
+      const haystack = [sale.platform, sale.title, sale.buyer, sale.sku]
+        .map(value => normalizeString(value))
+        .join(' ');
+      if (!haystack.includes(search)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  if (!filteredSales.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucune vente correspondante</td></tr>';
+  } else {
+    const html = filteredSales.map(sale => `
+      <tr>
+        <td>${escapeHtml(formatDate(sale.date))}</td>
+        <td>${escapeHtml(sale.platform)}</td>
+        <td>${escapeHtml(sale.title)}</td>
+        <td>${escapeHtml(formatCurrency(sale.price))}</td>
+        <td>${escapeHtml(formatCurrency(sale.fees))}</td>
+        <td class="${escapeHtml(sale.margin >= 0 ? 'text-success' : 'text-danger')}">${escapeHtml(formatCurrency(sale.margin))}</td>
+        <td>
+          <div class="action-buttons">
+            <button class="action-btn action-btn-edit" onclick="editSale('${escapeHtml(String(sale.id))}')">✏️</button>
+            <button class="action-btn action-btn-delete" onclick="deleteSale('${escapeHtml(String(sale.id))}')">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+    tbody.innerHTML = html;
+  }
+
+  updateSalesFilters(data.sales);
 }
 
-function updateSalesFilters(data) {
-  // Mise à jour du filtre plateformes
+function updateSalesFilters(sales) {
   const platformSelect = document.getElementById('sales-platform');
-  const platforms = [...new Set(data.sales.map(sale => sale.platform).filter(Boolean))];
-  
+  if (!platformSelect) {
+    return;
+  }
+
+  const platforms = Array.from(new Set(
+    sales
+      .map(sale => sale.platform)
+      .filter(Boolean)
+      .map(platform => platform.trim())
+  )).sort((a, b) => a.localeCompare(b));
+
+  const previousValue = state.ventes.filters.platform || '';
   platformSelect.innerHTML = '<option value="">Toutes les plateformes</option>' +
     platforms.map(platform => `<option value="${escapeHtml(platform)}">${escapeHtml(platform)}</option>`).join('');
+  platformSelect.value = previousValue;
 }
 
-// Achats
-function loadPurchasesData() {
-  showLoading();
-  
-  google.script.run
-    .withSuccessHandler(function(data) {
-      hideLoading();
-      updatePurchasesTable(data);
-      updatePurchasesFilters(data);
-    })
-    .withFailureHandler(function(error) {
-      hideLoading();
-      showError('Erreur lors du chargement des achats: ' + error);
-    })
-    .getPurchasesData();
-}
-
-function updatePurchasesTable(data) {
+function renderPurchases(data) {
   const tbody = document.querySelector('#purchases-table tbody');
-  
-  if (!data.purchases || !data.purchases.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun achat enregistré</td></tr>';
+  if (!tbody) {
     return;
   }
-  
-  const html = data.purchases.map(purchase => `
-    <tr>
-      <td>${escapeHtml(formatDate(purchase.date))}</td>
-      <td>${escapeHtml(purchase.supplier)}</td>
-      <td>${escapeHtml(purchase.description)}</td>
-      <td>${escapeHtml(formatCurrency(purchase.price))}</td>
-      <td>${escapeHtml(purchase.category)}</td>
-      <td><span class="status-badge status-${escapeHtml(purchase.status)}">${escapeHtml(purchase.status)}</span></td>
-      <td>
-        <div class="action-buttons">
-          <button class="action-btn action-btn-edit" onclick="editPurchase('${escapeHtml(purchase.id)}')">✏️</button>
-          <button class="action-btn action-btn-delete" onclick="deletePurchase('${escapeHtml(purchase.id)}')">🗑️</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-  
-  tbody.innerHTML = html;
-  currentData.purchases = data.purchases;
+
+  if (!data || !Array.isArray(data.purchases)) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucune donnée disponible</td></tr>';
+    return;
+  }
+
+  const filters = state.achats.filters;
+  const search = (state.achats.searchTerm || '').trim().toLowerCase();
+  const dateFrom = filters.dateFrom ? parseDateValue(filters.dateFrom) : null;
+  const dateTo = filters.dateTo ? parseDateValue(filters.dateTo) : null;
+
+  const filteredPurchases = data.purchases.filter(purchase => {
+    if (filters.supplier && normalizeString(purchase.supplier) !== normalizeString(filters.supplier)) {
+      return false;
+    }
+
+    const purchaseDate = parseDateValue(purchase.date);
+    if (dateFrom && purchaseDate && purchaseDate < dateFrom) {
+      return false;
+    }
+    if (dateTo && purchaseDate && purchaseDate > dateTo) {
+      return false;
+    }
+
+    if (search) {
+      const haystack = [purchase.supplier, purchase.description, purchase.category, purchase.notes]
+        .map(value => normalizeString(value))
+        .join(' ');
+      if (!haystack.includes(search)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  if (!filteredPurchases.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun achat correspondant</td></tr>';
+  } else {
+    const html = filteredPurchases.map(purchase => `
+      <tr>
+        <td>${escapeHtml(formatDate(purchase.date))}</td>
+        <td>${escapeHtml(purchase.supplier)}</td>
+        <td>${escapeHtml(purchase.description)}</td>
+        <td>${escapeHtml(formatCurrency(purchase.price))}</td>
+        <td>${escapeHtml(purchase.category)}</td>
+        <td><span class="status-badge status-${escapeHtml(normalizeString(purchase.status) || 'recu')}">${escapeHtml(purchase.status || '')}</span></td>
+        <td>
+          <div class="action-buttons">
+            <button class="action-btn action-btn-edit" onclick="editPurchase('${escapeHtml(String(purchase.id))}')">✏️</button>
+            <button class="action-btn action-btn-delete" onclick="deletePurchase('${escapeHtml(String(purchase.id))}')">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+    tbody.innerHTML = html;
+  }
+
+  updatePurchasesFilters(data.purchases);
 }
 
-function updatePurchasesFilters(data) {
-  // Mise à jour du filtre fournisseurs
+function updatePurchasesFilters(purchases) {
   const supplierSelect = document.getElementById('purchases-supplier');
-  const suppliers = [...new Set(data.purchases.map(purchase => purchase.supplier).filter(Boolean))];
-  
+  if (!supplierSelect) {
+    return;
+  }
+
+  const suppliers = Array.from(new Set(
+    purchases
+      .map(purchase => purchase.supplier)
+      .filter(Boolean)
+      .map(supplier => supplier.trim())
+  )).sort((a, b) => a.localeCompare(b));
+
+  const previousValue = state.achats.filters.supplier || '';
   supplierSelect.innerHTML = '<option value="">Tous les fournisseurs</option>' +
     suppliers.map(supplier => `<option value="${escapeHtml(supplier)}">${escapeHtml(supplier)}</option>`).join('');
+  supplierSelect.value = previousValue;
 }
 
-// Analytics
-function loadAnalyticsData() {
-  showLoading();
-  
-  const period = document.getElementById('analytics-period').value;
-  
-  google.script.run
-    .withSuccessHandler(function(data) {
-      hideLoading();
-      updateAnalytics(data);
-    })
-    .withFailureHandler(function(error) {
-      hideLoading();
-      showError('Erreur lors du chargement des analytics: ' + error);
-    })
-    .getAnalyticsData(period);
+function renderAnalytics(data) {
+  const periodSelect = document.getElementById('analytics-period');
+  if (periodSelect) {
+    const wanted = state.analytics.currentPeriod || periodSelect.value;
+    if (wanted) {
+      periodSelect.value = wanted;
+    }
+  }
+
+  const currentPeriod = state.analytics.currentPeriod;
+  const dataset = data && currentPeriod ? data[currentPeriod] : null;
+  renderTopItems(dataset || []);
 }
 
-function updateAnalytics(data) {
-  // Mise à jour des graphiques (placeholder pour l'instant)
-  updateTopItems(data.topItems || []);
-}
-
-function updateTopItems(items) {
+function renderTopItems(items) {
   const container = document.getElementById('top-items');
-  
+  if (!container) {
+    return;
+  }
+
   if (!items.length) {
     container.innerHTML = '<div class="text-center text-secondary">Aucune donnée disponible</div>';
     return;
   }
-  
+
   const html = items.map((item, index) => `
     <div class="activity-item">
       <div class="activity-icon">${escapeHtml(index + 1)}</div>
       <div class="activity-content">
-        <div class="activity-title">${escapeHtml(item.title)}</div>
-        <div class="activity-time">${escapeHtml(formatCurrency(item.revenue))} • ${escapeHtml(item.sales)} ventes</div>
+        <div class="activity-title">${escapeHtml(item.title || item.sku || '')}</div>
+        <div class="activity-time">${escapeHtml(formatCurrency(item.revenue || 0))} • ${escapeHtml(item.sales || 0)} ventes</div>
       </div>
     </div>
   `).join('');
-  
+
   container.innerHTML = html;
 }
 
-// Actions rapides
+// ========================= Mapping des données =========================
+function mapStockData(stockAll, stockLegacy) {
+  if (stockLegacy && Array.isArray(stockLegacy.items)) {
+    return {
+      items: stockLegacy.items.map(item => ({
+        id: item.id,
+        sku: item.sku,
+        title: item.title,
+        category: item.category,
+        purchasePrice: parseNumber(item.purchasePrice),
+        targetPrice: parseNumber(item.targetPrice),
+        status: item.status,
+        platform: item.platform,
+        notes: item.notes
+      }))
+    };
+  }
+
+  const rows = Array.isArray(stockAll?.rows) ? stockAll.rows : [];
+  return {
+    items: rows.map((row, index) => ({
+      id: index + 2,
+      sku: row[1] || '',
+      title: row[2] || '',
+      category: row[4] || '',
+      purchasePrice: parseNumber(row[8]),
+      targetPrice: parseNumber(row[9] || row[8]),
+      status: row[9] || 'disponible',
+      platform: row[10] || '',
+      notes: row[14] || ''
+    }))
+  };
+}
+
+function mapSalesData(ventesAll) {
+  const rows = Array.isArray(ventesAll?.rows) ? ventesAll.rows : [];
+  const sales = rows.map((row, index) => ({
+    id: index + 2,
+    date: parseDateValue(row[0]),
+    platform: row[1] || '',
+    title: row[2] || '',
+    price: parseNumber(row[3]),
+    fees: parseNumber(row[4]),
+    margin: parseNumber(row[9] != null ? row[9] : row[8]),
+    buyer: row[6] || '',
+    sku: row[7] || ''
+  }));
+
+  sales.sort((a, b) => {
+    const da = parseDateValue(a.date) || 0;
+    const db = parseDateValue(b.date) || 0;
+    return db - da;
+  });
+
+  return { sales };
+}
+
+function mapPurchasesData(purchases) {
+  const list = Array.isArray(purchases?.purchases) ? purchases.purchases : [];
+  return {
+    purchases: list.map(item => ({
+      id: item.id,
+      date: parseDateValue(item.date),
+      supplier: item.supplier || '',
+      description: item.description || '',
+      price: parseNumber(item.price),
+      category: item.category || '',
+      status: item.status || 'reçu',
+      notes: item.notes || ''
+    }))
+  };
+}
+
+function mapAnalyticsData(periods, analyticsResults) {
+  const data = {};
+  periods.forEach((period, index) => {
+    const payload = analyticsResults[index];
+    data[period] = Array.isArray(payload?.topItems) ? payload.topItems : [];
+  });
+  return data;
+}
+
+function mapDashboardData(dashboardRaw, stockData, salesData, purchasesData) {
+  const kpis = Array.isArray(dashboardRaw?.kpis) ? dashboardRaw.kpis : [];
+  const kpiMap = new Map();
+  kpis.forEach(([label, value]) => {
+    if (!label) {
+      return;
+    }
+    kpiMap.set(normalizeString(label), value);
+  });
+
+  const findKpiNumber = (keywords) => {
+    for (const [key, value] of kpiMap.entries()) {
+      if (keywords.some(keyword => key.includes(keyword))) {
+        return parseNumber(value);
+      }
+    }
+    return 0;
+  };
+
+  const totalRevenue = findKpiNumber(['chiffre', 'ca', 'revenue']);
+  const totalStockKpi = findKpiNumber(['stock']);
+  const totalSalesKpi = findKpiNumber(['ventes', 'sales']);
+  const avgMarginKpi = findKpiNumber(['marge']);
+
+  const computedStock = Array.isArray(stockData?.items)
+    ? stockData.items.filter(item => normalizeString(item.status) !== 'vendu').length
+    : 0;
+  const computedSalesCount = Array.isArray(salesData?.sales) ? salesData.sales.length : 0;
+  const computedRevenue = Array.isArray(salesData?.sales)
+    ? salesData.sales.reduce((sum, sale) => sum + parseNumber(sale.price), 0)
+    : 0;
+  const computedMargin = Array.isArray(salesData?.sales)
+    ? salesData.sales.reduce((sum, sale) => sum + parseNumber(sale.margin), 0)
+    : 0;
+
+  const avgMarginComputed = computedRevenue > 0 ? (computedMargin / computedRevenue) * 100 : 0;
+
+  const recentActivity = buildRecentActivity(salesData?.sales || [], purchasesData?.purchases || []);
+
+  return {
+    totalRevenue: totalRevenue || computedRevenue,
+    totalStock: totalStockKpi || computedStock,
+    totalSales: totalSalesKpi || computedSalesCount,
+    avgMargin: avgMarginKpi || avgMarginComputed,
+    recentActivity
+  };
+}
+
+function buildRecentActivity(sales, purchases) {
+  const entries = [];
+
+  sales.forEach(sale => {
+    const date = parseDateValue(sale.date);
+    if (!date) {
+      return;
+    }
+    entries.push({
+      type: 'sale',
+      title: `${sale.title || 'Vente'} - ${formatCurrency(parseNumber(sale.price))}`,
+      date
+    });
+  });
+
+  purchases.forEach(purchase => {
+    const date = parseDateValue(purchase.date);
+    if (!date) {
+      return;
+    }
+    entries.push({
+      type: 'purchase',
+      title: `${purchase.supplier || 'Achat'} - ${formatCurrency(parseNumber(purchase.price))}`,
+      date
+    });
+  });
+
+  entries.sort((a, b) => (b.date || 0) - (a.date || 0));
+  return entries.slice(0, 5);
+}
+
+// ========================= Écouteurs =========================
+function setupEventListeners() {
+  const stockSearch = document.getElementById('stock-search');
+  if (stockSearch) {
+    stockSearch.addEventListener('input', debounce(event => {
+      state.stock.searchTerm = event.target.value || '';
+      renderStock(state.stock.data);
+    }, 300));
+  }
+
+  const stockCategory = document.getElementById('stock-category');
+  if (stockCategory) {
+    state.stock.filters.category = stockCategory.value || '';
+    stockCategory.addEventListener('change', event => {
+      state.stock.filters.category = event.target.value || '';
+      renderStock(state.stock.data);
+    });
+  }
+
+  const stockStatus = document.getElementById('stock-status');
+  if (stockStatus) {
+    state.stock.filters.status = stockStatus.value || '';
+    stockStatus.addEventListener('change', event => {
+      state.stock.filters.status = event.target.value || '';
+      renderStock(state.stock.data);
+    });
+  }
+
+  const salesSearch = document.getElementById('sales-search');
+  if (salesSearch) {
+    salesSearch.addEventListener('input', debounce(event => {
+      state.ventes.searchTerm = event.target.value || '';
+      renderSales(state.ventes.data);
+    }, 300));
+  }
+
+  const salesPlatform = document.getElementById('sales-platform');
+  if (salesPlatform) {
+    state.ventes.filters.platform = salesPlatform.value || '';
+    salesPlatform.addEventListener('change', event => {
+      state.ventes.filters.platform = event.target.value || '';
+      renderSales(state.ventes.data);
+    });
+  }
+
+  const salesDateFrom = document.getElementById('sales-date-from');
+  if (salesDateFrom) {
+    salesDateFrom.addEventListener('change', event => {
+      state.ventes.filters.dateFrom = event.target.value || '';
+      renderSales(state.ventes.data);
+    });
+  }
+
+  const salesDateTo = document.getElementById('sales-date-to');
+  if (salesDateTo) {
+    salesDateTo.addEventListener('change', event => {
+      state.ventes.filters.dateTo = event.target.value || '';
+      renderSales(state.ventes.data);
+    });
+  }
+
+  const purchasesSearch = document.getElementById('purchases-search');
+  if (purchasesSearch) {
+    purchasesSearch.addEventListener('input', debounce(event => {
+      state.achats.searchTerm = event.target.value || '';
+      renderPurchases(state.achats.data);
+    }, 300));
+  }
+
+  const purchasesSupplier = document.getElementById('purchases-supplier');
+  if (purchasesSupplier) {
+    state.achats.filters.supplier = purchasesSupplier.value || '';
+    purchasesSupplier.addEventListener('change', event => {
+      state.achats.filters.supplier = event.target.value || '';
+      renderPurchases(state.achats.data);
+    });
+  }
+
+  const purchasesDateFrom = document.getElementById('purchases-date-from');
+  if (purchasesDateFrom) {
+    purchasesDateFrom.addEventListener('change', event => {
+      state.achats.filters.dateFrom = event.target.value || '';
+      renderPurchases(state.achats.data);
+    });
+  }
+
+  const purchasesDateTo = document.getElementById('purchases-date-to');
+  if (purchasesDateTo) {
+    purchasesDateTo.addEventListener('change', event => {
+      state.achats.filters.dateTo = event.target.value || '';
+      renderPurchases(state.achats.data);
+    });
+  }
+
+  const analyticsPeriod = document.getElementById('analytics-period');
+  if (analyticsPeriod) {
+    state.analytics.currentPeriod = analyticsPeriod.value || analyticsPeriod.options[0]?.value || '7';
+    analyticsPeriod.addEventListener('change', event => {
+      state.analytics.currentPeriod = event.target.value || '7';
+      renderAnalytics(state.analytics.data);
+    });
+  }
+}
+
+// ========================= Actions rapides =========================
 function quickAddStock() {
   showModal('Ajouter un article', getStockForm(), [
     { text: 'Annuler', class: 'btn-outline', action: 'closeModal()' },
@@ -381,7 +929,19 @@ function quickAddPurchase() {
   ]);
 }
 
-// Formulaires
+function addStock() {
+  quickAddStock();
+}
+
+function addSale() {
+  quickAddSale();
+}
+
+function addPurchase() {
+  quickAddPurchase();
+}
+
+// ========================= Formulaires =========================
 function getStockForm() {
   return `
     <div class="form-group">
@@ -487,7 +1047,7 @@ function getPurchaseForm() {
   `;
 }
 
-// Sauvegarde des données
+// ========================= Sauvegarde des données =========================
 function saveStock() {
   const data = {
     sku: document.getElementById('stock-sku').value,
@@ -497,24 +1057,21 @@ function saveStock() {
     targetPrice: parseFloat(document.getElementById('stock-target-price').value) || 0,
     description: document.getElementById('stock-description').value
   };
-  
+
   if (!data.sku || !data.title) {
     showError('Veuillez remplir les champs obligatoires');
     return;
   }
-  
+
   showLoading();
-  
+
   google.script.run
-    .withSuccessHandler(function(result) {
+    .withSuccessHandler(async function(result) {
       hideLoading();
-      closeModal();
       if (result.success) {
+        closeModal();
         showSuccess('Article ajouté avec succès');
-        if (currentView === 'stock') {
-          loadStockData();
-        }
-        loadDashboardData(); // Refresh dashboard stats
+        await refreshAll();
       } else {
         showError(result.error || 'Erreur lors de l\'ajout');
       }
@@ -535,24 +1092,21 @@ function saveSale() {
     buyer: document.getElementById('sale-buyer').value,
     date: document.getElementById('sale-date').value
   };
-  
+
   if (!data.sku || !data.platform || !data.price) {
     showError('Veuillez remplir les champs obligatoires');
     return;
   }
-  
+
   showLoading();
-  
+
   google.script.run
-    .withSuccessHandler(function(result) {
+    .withSuccessHandler(async function(result) {
       hideLoading();
-      closeModal();
       if (result.success) {
+        closeModal();
         showSuccess('Vente enregistrée avec succès');
-        if (currentView === 'ventes') {
-          loadSalesData();
-        }
-        loadDashboardData(); // Refresh dashboard stats
+        await refreshAll();
       } else {
         showError(result.error || 'Erreur lors de l\'enregistrement');
       }
@@ -573,26 +1127,23 @@ function savePurchase() {
     date: document.getElementById('purchase-date').value,
     notes: document.getElementById('purchase-notes').value
   };
-  
+
   if (!data.supplier || !data.description || !data.price) {
     showError('Veuillez remplir les champs obligatoires');
     return;
   }
-  
+
   showLoading();
-  
+
   google.script.run
-    .withSuccessHandler(function(result) {
+    .withSuccessHandler(async function(result) {
       hideLoading();
-      closeModal();
       if (result.success) {
-        showSuccess('Achat enregistré avec succès');
-        if (currentView === 'achats') {
-          loadPurchasesData();
-        }
-        loadDashboardData(); // Refresh dashboard stats
+        closeModal();
+        showSuccess('Achat ajouté avec succès');
+        await refreshAll();
       } else {
-        showError(result.error || 'Erreur lors de l\'enregistrement');
+        showError(result.error || 'Erreur lors de l\'ajout');
       }
     })
     .withFailureHandler(function(error) {
@@ -602,16 +1153,16 @@ function savePurchase() {
     .addPurchase(data);
 }
 
-// Gestion des modals
+// ========================= Gestion des modals =========================
 function showModal(title, body, buttons) {
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = body;
-  
+
   const footer = document.getElementById('modal-footer');
-  footer.innerHTML = buttons.map(btn => 
+  footer.innerHTML = buttons.map(btn =>
     `<button class="btn ${escapeHtml(btn.class)}" onclick="${escapeHtml(btn.action)}">${escapeHtml(btn.text)}</button>`
   ).join('');
-  
+
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
 
@@ -619,7 +1170,7 @@ function closeModal() {
   document.getElementById('modal-overlay').classList.add('hidden');
 }
 
-// Gestion du loading
+// ========================= Gestion du loading =========================
 function showLoading() {
   isLoading = true;
   document.getElementById('loading-overlay').classList.remove('hidden');
@@ -630,137 +1181,48 @@ function hideLoading() {
   document.getElementById('loading-overlay').classList.add('hidden');
 }
 
-// Notifications
+// ========================= Notifications =========================
 function showSuccess(message) {
-  // Implémentation simple - peut être améliorée avec une vraie notification
   alert('✅ ' + message);
 }
 
 function showError(message) {
-  // Implémentation simple - peut être améliorée avec une vraie notification
   alert('❌ ' + message);
 }
 
-// Utilitaires
-function formatCurrency(amount) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR'
-  }).format(amount || 0);
-}
-
-function formatPercentage(value) {
-  return (value || 0).toFixed(1) + '%';
-}
-
-function formatDate(date) {
-  if (!date) return '';
-  return new Date(date).toLocaleDateString('fr-FR');
-}
-
-function getActivityIcon(type) {
-  const icons = {
-    'sale': '💰',
-    'purchase': '🛒',
-    'stock': '📦',
-    'default': '📋'
-  };
-  return icons[type] || icons.default;
-}
-
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
-// Gestion des filtres et recherche
-function handleSearch(event) {
-  const searchTerm = event.target.value.toLowerCase();
-  const viewName = currentView;
-  
-  // Filtrer les données selon la vue actuelle
-  if (currentData[viewName]) {
-    const filteredData = currentData[viewName].filter(item => {
-      return Object.values(item).some(value => 
-        String(value).toLowerCase().includes(searchTerm)
-      );
-    });
-    
-    // Mettre à jour l'affichage avec les données filtrées
-    updateTableWithFilteredData(viewName, filteredData);
-  }
-}
-
-function handleFilter() {
-  // Recharger les données avec les filtres appliqués
-  loadViewData(currentView);
-}
-
-function updateTableWithFilteredData(viewName, data) {
-  switch(viewName) {
-    case 'stock':
-      updateStockTable({ items: data });
-      break;
-    case 'ventes':
-      updateSalesTable({ sales: data });
-      break;
-    case 'achats':
-      updatePurchasesTable({ purchases: data });
-      break;
-  }
-}
-
-// Actions sur les éléments
+// ========================= Actions utilitaires =========================
 function editStock(id) {
-  // TODO: Implémenter l'édition
   console.log('Edit stock:', id);
 }
 
 function deleteStock(id) {
   if (confirm('Êtes-vous sûr de vouloir supprimer cet article ?')) {
-    // TODO: Implémenter la suppression
     console.log('Delete stock:', id);
   }
 }
 
 function editSale(id) {
-  // TODO: Implémenter l'édition
   console.log('Edit sale:', id);
 }
 
 function deleteSale(id) {
   if (confirm('Êtes-vous sûr de vouloir supprimer cette vente ?')) {
-    // TODO: Implémenter la suppression
     console.log('Delete sale:', id);
   }
 }
 
 function editPurchase(id) {
-  // TODO: Implémenter l'édition
   console.log('Edit purchase:', id);
 }
 
 function deletePurchase(id) {
   if (confirm('Êtes-vous sûr de vouloir supprimer cet achat ?')) {
-    // TODO: Implémenter la suppression
     console.log('Delete purchase:', id);
   }
 }
 
-// Actions globales
-function refreshData() {
-  loadViewData(currentView);
-}
-
 function openQuickAdd() {
-  switch(currentView) {
+  switch(state.tab) {
     case 'stock':
       quickAddStock();
       break;
@@ -777,13 +1239,12 @@ function openQuickAdd() {
 
 function generateReport() {
   showLoading();
-  
+
   google.script.run
     .withSuccessHandler(function(result) {
       hideLoading();
       if (result.success) {
         showSuccess('Rapport généré avec succès');
-        // Optionnel: ouvrir le rapport
         if (result.url) {
           window.open(result.url, '_blank');
         }
@@ -798,7 +1259,7 @@ function generateReport() {
     .generateReport();
 }
 
-// Export functions
+// ========================= Export functions =========================
 function exportStock() {
   window.open('https://docs.google.com/spreadsheets/d/' + getSpreadsheetId() + '/export?format=xlsx&gid=' + getStockSheetId());
 }
@@ -811,9 +1272,7 @@ function exportPurchases() {
   window.open('https://docs.google.com/spreadsheets/d/' + getSpreadsheetId() + '/export?format=xlsx&gid=' + getPurchasesSheetId());
 }
 
-// Fonctions utilitaires pour les exports (à implémenter côté serveur)
 function getSpreadsheetId() {
-  // Cette fonction sera implémentée côté serveur
   return '';
 }
 
